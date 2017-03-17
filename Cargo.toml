@@ -1,0 +1,6 @@
+[package]
+name = "show_and_tell"
+version = "0.1.0"
+authors = ["Michał Wiatrowski <wiatrowskimich@gmail.com>"]
+
+[dependencies]
