@@ -1,4 +1,4 @@
-use super::types::Message;
+use types::message::Message;
 
 use std::sync::mpsc::{channel, Sender};
 use std::{thread};

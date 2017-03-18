@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(RustcDecodable, RustcEncodable, Debug)]
 pub struct Message {
     pub publisher: String,
     pub topic: String,

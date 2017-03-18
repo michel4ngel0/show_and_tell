@@ -41,6 +41,6 @@ fn main() {
         }
     }
 
-    let server = Server::new(port);
+    let mut server = Server::new(port);
     server.run();
 }
