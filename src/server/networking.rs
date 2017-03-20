@@ -113,11 +113,22 @@ impl MessageParser {
             },
         };
 
-        match json::decode(&message_utf8) {
-            Ok(msg) => Some(msg),
+        let decoded: Result<Message, _> = json::decode(&message_utf8);
+        match decoded {
             Err(_)  => {
                 println!("(Parser) Invalid JSON object");
                 None
+            },
+            Ok(msg) => {
+                let n = msg.format.len();
+                for obj in &msg.objects {
+                    if obj.len() != n {
+                        println!("(Parser) Object has an invalid format");
+                        return None;
+                    }
+                }
+
+                Some(msg)
             },
         }
     }
