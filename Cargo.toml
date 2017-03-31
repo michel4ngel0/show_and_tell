@@ -6,3 +6,9 @@ authors = ["Michał Wiatrowski <wiatrowskimich@gmail.com>"]
 [dependencies]
 rustc-serialize = "0.3.23"
 rand = "0.3"
+regex = "0.2"
+gfx = "0.14"
+glutin = "0.7"
+gfx_window_glutin = "0.14"
+image = "*"
+cgmath = "0.7.0"
