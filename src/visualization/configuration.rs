@@ -1,4 +1,5 @@
 use types::message::Message;
+use types::{Geometry, ObjectRenderInfo};
 use regex::Regex;
 
 use std::collections::HashMap;
@@ -19,7 +20,6 @@ impl TopicInfo {
 
     fn set_texture(&mut self, filename: &str) {
         self.texture = String::from(filename);
-
     }
 }
 
@@ -81,7 +81,7 @@ impl Configuration {
         return self.textures.clone();
     }
 
-    pub fn get_render_info(&self, msg: &Message) -> (String, Vec<(f32, f32, f32)>) {
+    pub fn get_render_info(&self, msg: &Message) -> Vec<ObjectRenderInfo> {
         let texture_name = match self.topics.get(&msg.topic) {
             Some(info) => info.texture.clone(),
             None       => String::from(""),
@@ -100,16 +100,21 @@ impl Configuration {
             };
         }
 
-        let mut positions = Vec::<(f32, f32, f32)>::new();
+        let mut info = Vec::<ObjectRenderInfo>::new();
         for object in &msg.objects {
             let (mut x, mut y, mut z) = (0.0, 0.0, 0.0);
             if let Some(idx) = x_idx { x = object[idx].parse().unwrap(); }
             if let Some(idx) = y_idx { y = object[idx].parse().unwrap(); }
             if let Some(idx) = z_idx { z = object[idx].parse().unwrap(); }
 
-            positions.push((x, y, z));
+            info.push(ObjectRenderInfo {
+                id:           (10.0 + x + y + z) as u32,
+                model:        Geometry::Cube,
+                texture_name: texture_name.clone(),
+                position:     (x, y, z),
+            });
         }
 
-        return (texture_name, positions);
+        info
     }
 }

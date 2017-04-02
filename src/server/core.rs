@@ -83,7 +83,7 @@ impl Server {
 
         let p = publisher.clone();
         thread::spawn(move || {
-            let visualization = Visualization::new(self_out, p, pipeline);
+            let mut visualization = Visualization::new(self_out, p, pipeline);
             visualization.run();
         });
 
