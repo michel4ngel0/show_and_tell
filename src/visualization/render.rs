@@ -156,8 +156,7 @@ impl Renderer {
             gl::Clear(gl::COLOR_BUFFER_BIT);
 
             gl::DrawBuffer(gl::COLOR_ATTACHMENT1);
-            gl::ClearColor(1.0, 1.0, 1.0, 1.0);
-            gl::Clear(gl::COLOR_BUFFER_BIT);
+            gl::ClearBufferuiv(gl::COLOR, 1, &u32::max_value());
 
             let buffers: [GLenum; 2] = [gl::COLOR_ATTACHMENT0, gl::COLOR_ATTACHMENT1];
             gl::DrawBuffers(2, &(buffers[0]) as *const GLenum);
@@ -342,8 +341,8 @@ impl Renderer {
                         (self.y - y - 1) as i32,
                         1,
                         1,
-                        gl::RGBA,
-                        gl::UNSIGNED_BYTE,
+                        gl::RED_INTEGER,
+                        gl::UNSIGNED_INT,
                         mem::transmute(&mut id)
                     );
 
@@ -401,7 +400,7 @@ impl Renderer {
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
 
             gl::BindTexture(gl::TEXTURE_2D, tex_id_handle);
-            gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGBA as i32, x, y, 0, gl::RGBA, gl::UNSIGNED_BYTE, ptr::null());
+            gl::TexImage2D(gl::TEXTURE_2D, 0, gl::R32UI as i32, x, y, 0, gl::RED_INTEGER, gl::UNSIGNED_INT, ptr::null());
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
 

@@ -1,4 +1,4 @@
-use types::message::Message;
+use types::message::MessageIn;
 use types::ObjectRenderInfo;
 use visualization::configuration::Configuration;
 use visualization::render::Renderer;
@@ -12,14 +12,14 @@ use cgmath::{Point3, Vector3, AffineMatrix3};
 use std::sync::mpsc::Receiver;
 
 pub struct Visualization {
-    link: Receiver<Option<Message>>,
+    link: Receiver<Option<MessageIn>>,
     publisher: String,
     configuration: Configuration,
     renderer: Renderer,
 }
 
 impl Visualization {
-    pub fn new(link: Receiver<Option<Message>>, publisher: String, config_file: String) -> Visualization {
+    pub fn new(link: Receiver<Option<MessageIn>>, publisher: String, config_file: String) -> Visualization {
         Visualization {
             link: link,
             publisher: publisher,
@@ -56,7 +56,7 @@ impl Visualization {
         let textures_names = self.configuration.get_texture_names();
         // let textures = Visualization::load_textures(&mut factory, textures_names);
 
-        let mut recent_msg: Option<(Message, Vec<ObjectRenderInfo>)> = None;
+        let mut recent_msg: Option<(MessageIn, Vec<ObjectRenderInfo>)> = None;
 
         let mut mouse_x = 0;
         let mut mouse_y = 0;
@@ -65,7 +65,6 @@ impl Visualization {
             if let Ok(msg_option) = self.link.try_recv() {
                 match msg_option {
                     Some(msg) => {
-                        println!("(visualization) received message");
                         let render_info = self.configuration.get_render_info(&msg);
                         recent_msg = Some((msg, render_info));
                     },

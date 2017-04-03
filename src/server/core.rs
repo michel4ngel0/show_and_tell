@@ -1,4 +1,4 @@
-use types::message::Message;
+use types::message::MessageIn;
 use server::networking::Listener;
 use server::console::Console;
 use visualization::core::Visualization;
@@ -12,7 +12,7 @@ use std::net;
 pub struct Server {
     port: u32,
     address: net::Ipv4Addr,
-    visualizations: HashMap<String, Sender<Option<Message>>>,
+    visualizations: HashMap<String, Sender<Option<MessageIn>>>,
 }
 
 impl Server {
@@ -20,12 +20,12 @@ impl Server {
         Server {
             port: port,
             address: address,
-            visualizations: HashMap::<String, Sender<Option<Message>>>::new(),
+            visualizations: HashMap::<String, Sender<Option<MessageIn>>>::new(),
         }
     }
 
     pub fn run(&mut self) {
-        let (listener_in, listener_out) = channel::<Message>();
+        let (listener_in, listener_out) = channel::<MessageIn>();
         let (console_in, console_out) = channel::<String>();
         let (self_in, self_out) = channel::<String>();
 
@@ -84,7 +84,7 @@ impl Server {
     }
 
     fn start_visualization(&mut self, publisher: String, pipeline: String) -> String {
-        let (self_in, self_out) = channel::<Option<Message>>();
+        let (self_in, self_out) = channel::<Option<MessageIn>>();
 
         let p = publisher.clone();
         thread::spawn(move || {

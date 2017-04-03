@@ -1,8 +1,13 @@
+use std::collections::HashMap;
+
 #[derive(RustcDecodable, RustcEncodable, Debug)]
-pub struct Message {
+pub struct MessageIn {
     pub publisher: String,
-    pub topic: String,
-    pub timestamp: u64,
-    pub format: Vec<String>,
-    pub objects: Vec<Vec<String>>,
+    pub id: String,
+    pub objects: Vec<HashMap<String, String>>,
+}
+
+#[derive(RustcDecodable, RustcEncodable, Debug)]
+pub struct MessageOut {
+
 }

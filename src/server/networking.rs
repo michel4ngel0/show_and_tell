@@ -1,4 +1,4 @@
-use types::message::Message;
+use types::message::MessageIn;
 
 use std::sync::mpsc::{channel, Sender};
 use std::{thread};
@@ -12,11 +12,11 @@ const TCP_BUFFER_SIZE: usize = 1000000;
 pub struct Listener {
     port: u32,
     address: Ipv4Addr,
-    core_link: Sender<Message>,
+    core_link: Sender<MessageIn>,
 }
 
 impl Listener {
-    pub fn new(address: Ipv4Addr, port: u32, link: Sender<Message>) -> Listener {
+    pub fn new(address: Ipv4Addr, port: u32, link: Sender<MessageIn>) -> Listener {
         Listener {
             port: port,
             address: address,
@@ -24,7 +24,7 @@ impl Listener {
         }
     }
 
-    fn handle_connection(mut stream: TcpStream, link: Sender<Message>) {
+    fn handle_connection(mut stream: TcpStream, link: Sender<MessageIn>) {
         let mut buffer: [u8; TCP_BUFFER_SIZE] = [0; TCP_BUFFER_SIZE];
         let mut parser = MessageParser::new();
 
@@ -43,7 +43,7 @@ impl Listener {
         }
     }
 
-    fn listen_to_clients(address: Ipv4Addr, port: u32, link: Sender<Message>) {
+    fn listen_to_clients(address: Ipv4Addr, port: u32, link: Sender<MessageIn>) {
         let listener = TcpListener::bind(format!("{}:{}", address, port))
             .expect("Invalid IP address or port");
 
@@ -67,7 +67,7 @@ impl Listener {
         loop {
             println!("(Listener) Listening on port {}", self.port);
 
-            let (connections_in, connections_out) = channel::<Message>();
+            let (connections_in, connections_out) = channel::<MessageIn>();
 
             let address = self.address;
             let port = self.port;
@@ -95,7 +95,7 @@ struct MessageParser {
     buffer: Vec<u8>,
     open_parentheses: u32,
     parentheses_counter: u32,
-    messages: VecDeque<Message>,
+    messages: VecDeque<MessageIn>,
 }
 
 impl MessageParser {
@@ -104,11 +104,11 @@ impl MessageParser {
             buffer: vec![],
             open_parentheses: 0,
             parentheses_counter: 0,
-            messages: VecDeque::<Message>::new(),
+            messages: VecDeque::<MessageIn>::new(),
         }
     }
 
-    fn parse(text: &[u8]) -> Option<Message> {
+    fn parse(text: &[u8]) -> Option<MessageIn> {
         let message_utf8 = match String::from_utf8(text.to_vec()) {
             Ok(utf) => utf,
             Err(_)  => {
@@ -117,21 +117,13 @@ impl MessageParser {
             },
         };
 
-        let decoded: Result<Message, _> = json::decode(&message_utf8);
+        let decoded: Result<MessageIn, _> = json::decode(&message_utf8);
         match decoded {
             Err(_)  => {
                 println!("(Parser) Invalid JSON object");
                 None
             },
             Ok(msg) => {
-                let n = msg.format.len();
-                for obj in &msg.objects {
-                    if obj.len() != n {
-                        println!("(Parser) Object has an invalid format");
-                        return None;
-                    }
-                }
-
                 Some(msg)
             },
         }
@@ -176,7 +168,7 @@ impl MessageParser {
         }
     }
 
-    fn pop(&mut self) -> Option<Message> {
+    fn pop(&mut self) -> Option<MessageIn> {
         self.messages.pop_front()
     }
 }

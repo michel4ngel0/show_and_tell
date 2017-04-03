@@ -1,4 +1,4 @@
-use types::message::Message;
+use types::message::MessageIn;
 use types::{Geometry, ObjectRenderInfo};
 use regex::Regex;
 
@@ -7,70 +7,86 @@ use std::fs::File;
 use std::io::prelude::*;
 
 #[derive(Debug)]
-struct TopicInfo {
+struct TypeInfo {
     texture: String,
+    model:   Geometry,
 }
 
-impl TopicInfo {
-    fn new() -> TopicInfo {
-        TopicInfo {
-            texture: String::new(),
+impl TypeInfo {
+    fn new() -> TypeInfo {
+        TypeInfo {
+            texture: String::from(""),
+            model:   Geometry::Square,
         }
     }
 
     fn set_texture(&mut self, filename: &str) {
         self.texture = String::from(filename);
     }
+
+    fn set_model(&mut self, model: &str) {
+        match model {
+            "square" => self.model = Geometry::Square,
+            "cube"   => self.model = Geometry::Cube,
+            &_       => {},
+        };
+    }
 }
 
 pub struct Configuration {
     config_file: String,
-    topics: HashMap<String, TopicInfo>,
-    textures: Vec<String>,
+    types:       HashMap<String, TypeInfo>,
+    textures:    Vec<String>,
 }
 
 impl Configuration {
     fn load_config_file(&mut self, filename: String) {
         self.textures = vec![];
 
-        let topic_re = Regex::new(r"#\s+([^\s]+)[^#]*").unwrap();
+        let type_re = Regex::new(r"#\s+([^\s]+)[^#]*").unwrap();
         let rule_re = Regex::new(r"([^:\s]+)\s*:\s*([^:\s]+)").unwrap();
 
-        let mut topics = HashMap::<String, TopicInfo>::new();
+        let mut types = HashMap::<String, TypeInfo>::new();
 
         if let Ok(mut file) = File::open(filename) {
             let mut contents = String::new();
             if let Ok(_) = file.read_to_string(&mut contents) {
-                for topic in topic_re.captures_iter(&contents) {
-                    let topic_name = topic.get(1).unwrap().as_str();
-                    let mut topic_data = TopicInfo::new();
+                for type_description in type_re.captures_iter(&contents) {
+                    let type_name = type_description.get(1).unwrap().as_str();
+                    let mut type_data = TypeInfo::new();
 
-                    for rule in rule_re.captures_iter(topic.get(0).unwrap().as_str()) {
+                    for rule in rule_re.captures_iter(type_description.get(0).unwrap().as_str()) {
                         let name  = rule.get(1).unwrap().as_str();
                         let value = rule.get(2).unwrap().as_str();
 
                         match name {
-                            "texture" => {
-                                topic_data.set_texture(value);
+                            "texture"  => {
+                                type_data.set_texture(value);
                                 self.textures.push(String::from(value));
                             },
-                            _         => {},
+                            "geometry" => {
+                                type_data.set_model(value);
+                            }
+                            _          => {},
                         };
                     }
 
-                    topics.insert(String::from(topic_name), topic_data);
+                    types.insert(String::from(type_name), type_data);
                 }
             }
         };
 
-        self.topics = topics;
+        self.textures.sort();
+        self.textures.dedup();
+
+        self.types = types;
     }
 
     pub fn new(filename: String) -> Configuration {
         let mut new_configuration = Configuration {
             config_file: filename.clone(),
-            topics: HashMap::<String, TopicInfo>::new(),
-            textures: vec![],
+            types:       HashMap::<String, TypeInfo>::new(),
+            textures:    vec![],
         };
         new_configuration.load_config_file(filename);
 
@@ -81,40 +97,27 @@ impl Configuration {
         return self.textures.clone();
     }
 
-    pub fn get_render_info(&self, msg: &Message) -> Vec<ObjectRenderInfo> {
-        let texture_name = match self.topics.get(&msg.topic) {
-            Some(info) => info.texture.clone(),
-            None       => String::from(""),
-        };
+    pub fn get_render_info(&self, msg: &MessageIn) -> Vec<ObjectRenderInfo> {
+        let empty_str = String::new();
+        let default_info = TypeInfo::new();
 
-        let mut x_idx: Option<usize> = None;
-        let mut y_idx: Option<usize> = None;
-        let mut z_idx: Option<usize> = None;
+        msg.objects.iter().map(|obj: &HashMap<String, String>| {
+            let id = obj.get("id").unwrap_or(&empty_str).parse::<u32>().unwrap_or(u32::max_value());
+            let x = obj.get("x").unwrap_or(&empty_str).parse::<f32>().unwrap_or(0.0);
+            let y = obj.get("y").unwrap_or(&empty_str).parse::<f32>().unwrap_or(0.0);
+            let z = obj.get("z").unwrap_or(&empty_str).parse::<f32>().unwrap_or(0.0);
 
-        for (i, field) in msg.format.iter().enumerate() {
-            match field.as_ref() {
-                "x" => { x_idx = Some(i) },
-                "y" => { y_idx = Some(i) },
-                "z" => { z_idx = Some(i) },
-                _   => {},
-            };
-        }
+            let type_info = match obj.get("type") {
+                Some(type_name) => self.types.get(type_name),
+                None            => None,
+            }.unwrap_or(&default_info);
 
-        let mut info = Vec::<ObjectRenderInfo>::new();
-        for object in &msg.objects {
-            let (mut x, mut y, mut z) = (0.0, 0.0, 0.0);
-            if let Some(idx) = x_idx { x = object[idx].parse().unwrap(); }
-            if let Some(idx) = y_idx { y = object[idx].parse().unwrap(); }
-            if let Some(idx) = z_idx { z = object[idx].parse().unwrap(); }
-
-            info.push(ObjectRenderInfo {
-                id:           (10.0 + x + y + z) as u32,
-                model:        Geometry::Cube,
-                texture_name: texture_name.clone(),
+            ObjectRenderInfo {
+                id:           id,
+                model:        type_info.model.clone(),
+                texture_name: type_info.texture.clone(),
                 position:     (x, y, z),
-            });
-        }
-
-        info
+            }
+        }).collect()
     }
 }

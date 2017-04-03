@@ -39,17 +39,15 @@ fn main() {
         return;
     }
 
-    let mut port: u32 = rand::thread_rng().gen_range(MIN_VALID_PORT, MAX_VALID_PORT + 1);
-    let mut address: net::Ipv4Addr = net::Ipv4Addr::new(127, 0, 0, 1);
-
-    match parse_ip(&args[1]) {
-        Ok(addr) => address = addr,
+    let address = match parse_ip(&args[1]) {
+        Ok(addr) => addr,
         Err(why) => {
             println!("{}", why);
             return;
         }
-    }
+    };
 
+    let mut port: u32 = rand::thread_rng().gen_range(MIN_VALID_PORT, MAX_VALID_PORT + 1);
     if args.len() == 3 {
         match parse_port(&args[2]) {
             Ok(num) => port = num,

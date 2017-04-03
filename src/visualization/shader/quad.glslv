@@ -1,4 +1,4 @@
-#version 150 core
+#version 400 core
 
 in vec2 v_pos_xy;
 in vec2 v_tex_uv;
