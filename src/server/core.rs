@@ -7,16 +7,19 @@ use std::sync::mpsc::{channel, Sender};
 use std::thread;
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::net;
 
 pub struct Server {
     port: u32,
+    address: net::Ipv4Addr,
     visualizations: HashMap<String, Sender<Option<Message>>>,
 }
 
 impl Server {
-    pub fn new(port: u32) -> Server {
+    pub fn new(address: net::Ipv4Addr, port: u32) -> Server {
         Server {
             port: port,
+            address: address,
             visualizations: HashMap::<String, Sender<Option<Message>>>::new(),
         }
     }
@@ -27,9 +30,11 @@ impl Server {
         let (self_in, self_out) = channel::<String>();
 
         {
-            let p = self.port;
+            let port = self.port;
+            let address = self.address;
+
             thread::spawn(move || {
-                let listener = Listener::new(p, listener_in);
+                let listener = Listener::new(address, port, listener_in);
                 listener.run();
             });
 

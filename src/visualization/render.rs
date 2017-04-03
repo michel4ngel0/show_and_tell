@@ -156,7 +156,7 @@ impl Renderer {
             gl::Clear(gl::COLOR_BUFFER_BIT);
 
             gl::DrawBuffer(gl::COLOR_ATTACHMENT1);
-            gl::ClearColor(0.0, 0.0, 0.0, 0.0);
+            gl::ClearColor(1.0, 1.0, 1.0, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
 
             let buffers: [GLenum; 2] = [gl::COLOR_ATTACHMENT0, gl::COLOR_ATTACHMENT1];
@@ -330,7 +330,7 @@ impl Renderer {
                     return None;
                 }
 
-                let mut id: u32 = 0;
+                let mut id: u32 = u32::max_value();
                 unsafe {
                     gl::BindFramebuffer(gl::FRAMEBUFFER, framebuffer);
                     check_framebuffer_status();
@@ -352,7 +352,7 @@ impl Renderer {
 
                 check_gl_error();
 
-                Some(id)
+                if id == u32::max_value() { None } else { Some(id) }
             },
             None => None,
         }

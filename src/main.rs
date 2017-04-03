@@ -4,9 +4,19 @@ extern crate rand;
 use std::env;
 use show_and_tell::Server;
 use rand::Rng;
+use std::net;
+use std::str::FromStr;
+use std::error::Error;
 
 const MIN_VALID_PORT: u32 = 1024;
 const MAX_VALID_PORT: u32 = 49151;
+
+fn parse_ip(ip_string: &String) -> Result<net::Ipv4Addr, String> {
+    match net::Ipv4Addr::from_str(ip_string) {
+        Ok(address) => Ok(address),
+        Err(error)  => Err(String::from(error.description())),
+    }
+}
 
 fn parse_port(port_string: &String) -> Result<u32, String> {
     let port = match port_string.parse::<u32>() {
@@ -24,15 +34,24 @@ fn parse_port(port_string: &String) -> Result<u32, String> {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() != 2 && args.len() != 1 {
-        println!("usage: show_and_tell [port]");
+    if args.len() != 3 && args.len() != 2 {
+        println!("usage: show_and_tell address [port]");
         return;
     }
 
     let mut port: u32 = rand::thread_rng().gen_range(MIN_VALID_PORT, MAX_VALID_PORT + 1);
+    let mut address: net::Ipv4Addr = net::Ipv4Addr::new(127, 0, 0, 1);
 
-    if args.len() == 2 {
-        match parse_port(&args[1]) {
+    match parse_ip(&args[1]) {
+        Ok(addr) => address = addr,
+        Err(why) => {
+            println!("{}", why);
+            return;
+        }
+    }
+
+    if args.len() == 3 {
+        match parse_port(&args[2]) {
             Ok(num) => port = num,
             Err(why) => {
                 println!("{}", why);
@@ -41,6 +60,6 @@ fn main() {
         }
     }
 
-    let mut server = Server::new(port);
+    let mut server = Server::new(address, port);
     server.run();
 }

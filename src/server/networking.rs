@@ -2,7 +2,7 @@ use types::message::Message;
 
 use std::sync::mpsc::{channel, Sender};
 use std::{thread};
-use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream, Ipv4Addr};
 use std::io::Read;
 use std::collections::{VecDeque};
 use rustc_serialize::json;
@@ -11,13 +11,15 @@ const TCP_BUFFER_SIZE: usize = 1000000;
 
 pub struct Listener {
     port: u32,
+    address: Ipv4Addr,
     core_link: Sender<Message>,
 }
 
 impl Listener {
-    pub fn new(port: u32, link: Sender<Message>) -> Listener {
+    pub fn new(address: Ipv4Addr, port: u32, link: Sender<Message>) -> Listener {
         Listener {
             port: port,
+            address: address,
             core_link: link,
         }
     }
@@ -41,9 +43,9 @@ impl Listener {
         }
     }
 
-    fn listen_to_clients(port: u32, link: Sender<Message>) {
-        let addr = format!("127.0.0.1:{}", port);
-        let listener = TcpListener::bind(addr.as_str()).unwrap();
+    fn listen_to_clients(address: Ipv4Addr, port: u32, link: Sender<Message>) {
+        let listener = TcpListener::bind(format!("{}:{}", address, port))
+            .expect("Invalid IP address or port");
 
         for stream in listener.incoming() {
             match stream {
@@ -66,10 +68,12 @@ impl Listener {
             println!("(Listener) Listening on port {}", self.port);
 
             let (connections_in, connections_out) = channel::<Message>();
+
+            let address = self.address;
             let port = self.port;
 
             thread::spawn(move || {
-                Listener::listen_to_clients(port, connections_in);
+                Listener::listen_to_clients(address, port, connections_in);
             });
 
             loop {
