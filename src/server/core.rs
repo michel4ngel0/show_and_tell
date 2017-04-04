@@ -58,8 +58,6 @@ impl Server {
             let mut removed_visualizations: Vec<String> = vec![];
             for (name, link) in &self.visualizations {
                 if let Ok(response) = link.try_recv() {
-                    println!("(Core) response from visualization {}: {:?}", name, response);
-
                     match response {
                         Some(msg) => { let _ = ch_me_listener.send(msg); },
                         None      => { removed_visualizations.push(name.clone()); },
@@ -67,6 +65,7 @@ impl Server {
                 }
             }
             for name in removed_visualizations {
+                let _ = ch_me_console.send(format!("Visualization {} has been stopped", name));
                 self.stop_visualization(name);
             }
         }

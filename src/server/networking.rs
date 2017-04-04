@@ -3,7 +3,8 @@ use types::double_channel::{channel, Endpoint};
 
 use std::{thread};
 use std::net::{TcpListener, TcpStream, Ipv4Addr};
-use std::io::Read;
+use std::io::{Write, Read};
+use std::time::Duration;
 use std::collections::{VecDeque, HashMap};
 use rustc_serialize::json;
 
@@ -44,15 +45,12 @@ impl Listener {
                         };
                     }
                 },
-                Err(error) => {
-                    println!("(Connection) Error: {}", error);
-                    let _ = link.send(None);
-                    break;
-                },
+                Err(_) => { },
             }
 
             if let Ok(response) = link.try_recv() {
-                println!("(Connection) Not gonna send this XD {:?}", response);
+                let json_response = json::as_json(&response).to_string();
+                let _ = stream.write(json_response.as_bytes());
             }
         }
     }
@@ -61,12 +59,17 @@ impl Listener {
         let listener = TcpListener::bind(format!("{}:{}", address, port))
             .expect("Invalid IP address or port");
 
+        let five_milliseconds = Duration::from_millis(20);
+
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
                     println!("(Connection) New client, {:?}!", stream);
 
-                    let connection_name = match  stream.peer_addr() {
+                    let _ = stream.set_read_timeout(Some(five_milliseconds));
+                    let _ = stream.set_nodelay(true);
+
+                    let connection_name = match stream.peer_addr() {
                         Ok(addr) => format!("{:?}:{}", addr.ip(), addr.port()),
                         Err(_)   => {
                             println!("(Listener) Could not determine client address");

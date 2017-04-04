@@ -1,14 +1,17 @@
-use types::message::{MessageIn, MessageOut};
+use types::message::{MessageIn, MessageOut, Object};
 use types::ObjectRenderInfo;
 use types::double_channel::Endpoint;
 use visualization::configuration::Configuration;
 use visualization::render::Renderer;
 
 use glutin;
+use glutin::ElementState;
 use gl;
 use image;
 use cgmath;
 use cgmath::{Point3, Vector3, AffineMatrix3};
+
+use std::collections::HashMap;
 
 pub struct Visualization {
     link_core:     Endpoint<Option<MessageOut>, Option<MessageIn>>,
@@ -48,14 +51,19 @@ impl Visualization {
 
         self.renderer.init(window_x as usize, window_y as usize);
 
+        //  Camera position
         let mut direction = Vector3::new(0.0, 0.0, -0.1);
         let mut up = Vector3::new(0.0, 1.0, 0.0);
         let mut position = Point3::new(0.0, 0.0, 10.0);
 
+        let mut active_object: Option<u32> = None;
+
         let textures_names = self.configuration.get_texture_names();
         // let textures = Visualization::load_textures(&mut factory, textures_names);
 
-        let mut recent_msg: Option<(MessageIn, Vec<ObjectRenderInfo>)> = None;
+        let mut last_message_id: Option<String> = None;
+        let mut objects: HashMap<u32, Object> = HashMap::<u32, Object>::new();
+        let mut render_info: Vec<ObjectRenderInfo> = vec![];
 
         let mut mouse_x = 0;
         let mut mouse_y = 0;
@@ -64,8 +72,10 @@ impl Visualization {
             if let Ok(msg_option) = self.link_core.try_recv() {
                 match msg_option {
                     Some(msg) => {
-                        let render_info = self.configuration.get_render_info(&msg);
-                        recent_msg = Some((msg, render_info));
+                        let parsed_message = self.configuration.parse_message(&msg);
+                        render_info     = parsed_message.0;
+                        objects         = parsed_message.1;
+                        last_message_id = Some(parsed_message.2);
                     },
                     None      => {
                         println!("(visualization) terminating");
@@ -76,25 +86,53 @@ impl Visualization {
 
             for event in window.poll_events() {
                 match event {
-                    glutin::Event::KeyboardInput(_, _, Some(glutin::VirtualKeyCode::Escape)) |
-                    glutin::Event::Closed => break 'main,
-
-                    glutin::Event::MouseWheel(glutin::MouseScrollDelta::LineDelta(_, y), _) =>
-                        position = position + if y > 0.0 { direction } else { -direction },
-
+                    glutin::Event::Closed => {
+                        break 'main
+                    },
                     glutin::Event::Resized(x, y) => {
                         self.renderer.resize(x as usize, y as usize);
                     },
 
+                    glutin::Event::MouseWheel(glutin::MouseScrollDelta::LineDelta(_, y), _) => {
+                        position = position + if y > 0.0 { direction } else { -direction };
+                    },
                     glutin::Event::MouseMoved(x, y) => {
                         mouse_x = x as i32;
                         mouse_y = window.get_inner_size().unwrap().1 as i32 - y - 1;
                     },
-
                     glutin::Event::MouseInput(glutin::ElementState::Pressed, glutin::MouseButton::Left) => {
                         let id = self.renderer.get_id((mouse_x as usize, mouse_y as usize));
+                        active_object = id;
 
-                        println!("Click! ({}, {}): id {:?}", mouse_x, mouse_y, id);
+                        if let Some(id) = id {
+                            if let Some(object) = objects.get(&id) {
+                                println!("Active object: {:?}", object);
+                            }
+                        }
+                    },
+
+                    glutin::Event::KeyboardInput(ElementState::Pressed, _, Some(code)) => {
+                        if let Some(object_id) = active_object {
+                            match objects.get(&object_id) {
+                                None             => {},
+                                Some(attributes) => {
+                                    let maybe_code_str = self.configuration.get_key_str(code, attributes);
+
+                                    if let Some(code_str) = maybe_code_str {
+                                        if let Some(id) = last_message_id.clone() {
+                                            let _ = self.link_core.send(Some(
+                                                MessageOut {
+                                                    publisher: self.publisher.clone(),
+                                                    id:        id,
+                                                    object_id: object_id,
+                                                    key_code:  code_str,
+                                                }
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     },
 
                     _ => {},
@@ -113,13 +151,13 @@ impl Visualization {
             let proj = cgmath::perspective(cgmath::deg(75.0f32), aspect_ratio, 0.01, 1000.0);
             let camera_projection = (proj * camera_transformation.mat).into();
 
-            if let Some((_, ref render_info)) = recent_msg {
-                self.renderer.render(&render_info, camera_projection);
-            }
+            self.renderer.render(&render_info, camera_projection);
 
             window.swap_buffers()
                 .expect("Failed to swap buffers");
         }
+
+        let _ = self.link_core.send(None);
     }
 
     // fn empty_texture<F, R>(factory: &mut F, size: (usize, usize)) -> gfx::handle::ShaderResourceView<R, [f32; 4]>
