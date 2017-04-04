@@ -49,7 +49,7 @@ impl Listener {
             }
 
             if let Ok(response) = link.try_recv() {
-                let json_response = json::as_json(&response).to_string();
+                let json_response = format!("{}\n", json::as_json(&response).to_string());
                 let _ = stream.write(json_response.as_bytes());
             }
         }

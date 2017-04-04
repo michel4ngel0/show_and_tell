@@ -151,7 +151,7 @@ impl Visualization {
             let proj = cgmath::perspective(cgmath::deg(75.0f32), aspect_ratio, 0.01, 1000.0);
             let camera_projection = (proj * camera_transformation.mat).into();
 
-            self.renderer.render(&render_info, camera_projection);
+            self.renderer.render(&render_info, camera_projection, active_object);
 
             window.swap_buffers()
                 .expect("Failed to swap buffers");

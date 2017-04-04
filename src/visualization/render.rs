@@ -133,7 +133,12 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, objects: &Vec<ObjectRenderInfo>, camera_projection: cgmath::Matrix4<f32>) {
+    pub fn render(
+            &mut self, objects:
+            &Vec<ObjectRenderInfo>,
+            camera_projection: cgmath::Matrix4<f32>,
+            active_object: Option<u32>) {
+
         let framebuffer = self.framebuffer
             .expect("Cannot render, framebuffer has not been initialized");
 
@@ -186,6 +191,10 @@ impl Renderer {
                     program,
                     CString::new("u_id").unwrap().as_ptr()
                 );
+                let highlight_uniform_loc = gl::GetUniformLocation(
+                    program,
+                    CString::new("u_selection_highlight").unwrap().as_ptr()
+                );
 
                 gl::UniformMatrix4fv(
                     cam_proj_uniform_loc,
@@ -203,6 +212,12 @@ impl Renderer {
                             self.bind_cube();
                         }
                     }
+
+                    let highlight: f32 = match active_object {
+                        Some(id) => if id == object.id { 0.4 } else { 0.0 },
+                        None     => 0.0,
+                    };
+                    gl::Uniform1f(highlight_uniform_loc, highlight);
 
                     let model_matrix = cgmath::Matrix4::from_translation(cgmath::Vector3::<f32>::new(
                         object.position.0,
