@@ -1,21 +1,20 @@
-use std::sync::mpsc::{Sender, Receiver, channel};
 use std::io;
 use std::thread;
 
+use types::double_channel::{channel, Endpoint};
+
 pub struct Console {
-    self_in: Sender<String>,
-    core_out: Receiver<String>,
+    link_core: Endpoint<String, String>,
 }
 
 impl Console {
-    pub fn new(link_in: Sender<String>, link_out: Receiver<String>) -> Console {
+    pub fn new(link: Endpoint<String, String>) -> Console {
         Console {
-            self_in: link_in,
-            core_out: link_out,
+            link_core: link,
         }
     }
 
-    fn non_blocking_stdin(link: Sender<String>) {
+    fn non_blocking_stdin(link: Endpoint<String, ()>) {
         let mut line = String::new();
 
         loop {
@@ -28,18 +27,18 @@ impl Console {
     }
 
     pub fn run(&self) {
-        let (input_in, input_out) = channel::<String>();
+        let (ch_input, ch_me_input) = channel::<String, ()>();
 
         thread::spawn(move || {
-            Console::non_blocking_stdin(input_in);
+            Console::non_blocking_stdin(ch_input);
         });
 
         loop {
-            if let Ok(command) = input_out.try_recv() {
-                let _ = self.self_in.send(command);
+            if let Ok(command) = ch_me_input.try_recv() {
+                let _ = self.link_core.send(command);
             }
 
-            if let Ok(response) = self.core_out.try_recv() {
+            if let Ok(response) = self.link_core.try_recv() {
                 for line in response.split("\n") {
                     println!("=> {}", line.trim());
                 }

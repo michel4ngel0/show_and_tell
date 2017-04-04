@@ -1,49 +1,63 @@
-use types::message::MessageIn;
+use types::message::{MessageIn, MessageOut};
+use types::double_channel::{channel, Endpoint};
 
-use std::sync::mpsc::{channel, Sender};
 use std::{thread};
 use std::net::{TcpListener, TcpStream, Ipv4Addr};
 use std::io::Read;
-use std::collections::{VecDeque};
+use std::collections::{VecDeque, HashMap};
 use rustc_serialize::json;
+
+type ConnectionLink = Endpoint<MessageOut, Option<MessageIn>>;
+type ConnectionData = (String, ConnectionLink);
 
 const TCP_BUFFER_SIZE: usize = 1000000;
 
 pub struct Listener {
     port: u32,
     address: Ipv4Addr,
-    core_link: Sender<MessageIn>,
+    link_core: Endpoint<MessageIn, MessageOut>,
 }
 
 impl Listener {
-    pub fn new(address: Ipv4Addr, port: u32, link: Sender<MessageIn>) -> Listener {
+    pub fn new(address: Ipv4Addr, port: u32, link: Endpoint<MessageIn, MessageOut>) -> Listener {
         Listener {
             port: port,
             address: address,
-            core_link: link,
+            link_core: link,
         }
     }
 
-    fn handle_connection(mut stream: TcpStream, link: Sender<MessageIn>) {
+    fn handle_connection(mut stream: TcpStream, link: Endpoint<Option<MessageIn>, MessageOut>) {
         let mut buffer: [u8; TCP_BUFFER_SIZE] = [0; TCP_BUFFER_SIZE];
         let mut parser = MessageParser::new();
 
         loop {
-            if let Ok(bytes_read) = stream.read(&mut buffer) {
-                let slice = &buffer[0..bytes_read];
-                parser.push(slice);
+            match stream.read(&mut buffer) {
+                Ok(bytes_read) => {
+                    let slice = &buffer[0..bytes_read];
+                    parser.push(slice);
 
-                while let Some(msg) = parser.pop() {
-                    match link.send(msg) {
-                        Ok(_)  => {},
-                        Err(_) => println!("(Listener) Failed to send a message to main thread"),
-                    };
-                }
+                    while let Some(msg) = parser.pop() {
+                        match link.send(Some(msg)) {
+                            Ok(_)  => {},
+                            Err(_) => println!("(Connection) Failed to send a message to main thread"),
+                        };
+                    }
+                },
+                Err(error) => {
+                    println!("(Connection) Error: {}", error);
+                    let _ = link.send(None);
+                    break;
+                },
+            }
+
+            if let Ok(response) = link.try_recv() {
+                println!("(Connection) Not gonna send this XD {:?}", response);
             }
         }
     }
 
-    fn listen_to_clients(address: Ipv4Addr, port: u32, link: Sender<MessageIn>) {
+    fn listen_to_clients(address: Ipv4Addr, port: u32, link: Endpoint<ConnectionData, ()>) {
         let listener = TcpListener::bind(format!("{}:{}", address, port))
             .expect("Invalid IP address or port");
 
@@ -52,11 +66,21 @@ impl Listener {
                 Ok(stream) => {
                     println!("(Connection) New client, {:?}!", stream);
 
-                    let link = link.clone();
+                    let connection_name = match  stream.peer_addr() {
+                        Ok(addr) => format!("{:?}:{}", addr.ip(), addr.port()),
+                        Err(_)   => {
+                            println!("(Listener) Could not determine client address");
+                            continue;
+                        }
+                    };
+
+                    let (ch_connection, ch_me_connection) = channel::<Option<MessageIn>, MessageOut>();
 
                     thread::spawn(move || {
-                        Listener::handle_connection(stream, link);
+                        Listener::handle_connection(stream, ch_connection);
                     });
+
+                    let _ = link.send((connection_name, ch_me_connection));
                 },
                 Err(_) => {},
             }
@@ -67,25 +91,57 @@ impl Listener {
         loop {
             println!("(Listener) Listening on port {}", self.port);
 
-            let (connections_in, connections_out) = channel::<MessageIn>();
-
             let address = self.address;
             let port = self.port;
 
+            let mut connections = HashMap::<String, ConnectionLink>::new();
+            let mut publishers = HashMap::<String, String>::new();
+
+            let (ch_listener, ch_me_listener) = channel::<ConnectionData, ()>();
+
             thread::spawn(move || {
-                Listener::listen_to_clients(address, port, connections_in);
+                Listener::listen_to_clients(address, port, ch_listener);
             });
 
             loop {
-                match connections_out.try_recv() {
-                    Ok(msg) => {
-                        match self.core_link.send(msg) {
-                            Ok(_)  => {},
-                            Err(_) => println!("(Listener) Failed to send a message to core"),
-                        };
-                    },
-                    Err(_)  => {},
-                };
+                if let Ok((name, link)) = ch_me_listener.try_recv() {
+                    let _ = connections.insert(name, link);
+                }
+
+                let mut closed_connections: Vec<String> = vec![];
+                for (name, link) in &connections {
+                    if let Ok(option_msg) = link.try_recv() {
+                        match option_msg {
+                            Some(msg) => {
+                                let _ = publishers.insert(msg.publisher.clone(), name.clone());
+                                let _ = self.link_core.send(msg);
+                            },
+                            None => {
+                                closed_connections.push(name.clone());
+                            }
+                        }
+                    };
+                }
+                for name in closed_connections {
+                    connections.remove(&name);
+                }
+
+                let mut removed_publishers: Vec<String> = vec![];
+                if let Ok(msg) = self.link_core.try_recv() {
+                    match publishers.get(&msg.publisher) {
+                        Some(name) => if let Some(link) = connections.get(name) {
+                                let _ = link.send(msg);
+                            } else {
+                                removed_publishers.push(String::from(msg.publisher));
+                            },
+                        None => {
+                            println!("(Networking) Publisher {} not found", &msg.publisher);
+                        }
+                    }
+                }
+                for publisher in removed_publishers {
+                    publishers.remove(&publisher);
+                }
             }
         }
     }

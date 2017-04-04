@@ -1,4 +1,5 @@
 pub mod message;
+pub mod double_channel;
 
 #[derive(Debug, Clone)]
 pub enum Geometry {

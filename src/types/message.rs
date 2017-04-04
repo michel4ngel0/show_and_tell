@@ -9,5 +9,5 @@ pub struct MessageIn {
 
 #[derive(RustcDecodable, RustcEncodable, Debug)]
 pub struct MessageOut {
-
+    pub publisher: String,
 }

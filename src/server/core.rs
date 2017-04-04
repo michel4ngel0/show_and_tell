@@ -1,9 +1,9 @@
-use types::message::MessageIn;
+use types::message::{MessageIn, MessageOut};
+use types::double_channel::{channel, Endpoint};
 use server::networking::Listener;
 use server::console::Console;
 use visualization::core::Visualization;
 
-use std::sync::mpsc::{channel, Sender};
 use std::thread;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -12,7 +12,7 @@ use std::net;
 pub struct Server {
     port: u32,
     address: net::Ipv4Addr,
-    visualizations: HashMap<String, Sender<Option<MessageIn>>>,
+    visualizations: HashMap<String, Endpoint<Option<MessageIn>, Option<MessageOut>>>,
 }
 
 impl Server {
@@ -20,40 +20,54 @@ impl Server {
         Server {
             port: port,
             address: address,
-            visualizations: HashMap::<String, Sender<Option<MessageIn>>>::new(),
+            visualizations: HashMap::<String, Endpoint<Option<MessageIn>, Option<MessageOut>>>::new(),
         }
     }
 
     pub fn run(&mut self) {
-        let (listener_in, listener_out) = channel::<MessageIn>();
-        let (console_in, console_out) = channel::<String>();
-        let (self_in, self_out) = channel::<String>();
+        let (ch_listener, ch_me_listener) = channel::<MessageIn, MessageOut>();
+        let (ch_console, ch_me_console) = channel::<String, String>();
 
         {
             let port = self.port;
             let address = self.address;
 
             thread::spawn(move || {
-                let listener = Listener::new(address, port, listener_in);
+                let listener = Listener::new(address, port, ch_listener);
                 listener.run();
             });
 
             thread::spawn(move || {
-                let console = Console::new(console_in, self_out);
+                let console = Console::new(ch_console);
                 console.run();
             });
         }
 
         loop {
-            if let Ok(msg) = listener_out.try_recv() {
+            if let Ok(msg) = ch_me_listener.try_recv() {
                 if let Some(link) = self.visualizations.get(&msg.publisher) {
                     let _ = link.send(Some(msg));
                 }
             }
 
-            if let Ok(command) = console_out.try_recv() {
+            if let Ok(command) = ch_me_console.try_recv() {
                 let response = self.execute_command(command);
-                let _ = self_in.send(response);
+                let _ = ch_me_console.send(response);
+            }
+
+            let mut removed_visualizations: Vec<String> = vec![];
+            for (name, link) in &self.visualizations {
+                if let Ok(response) = link.try_recv() {
+                    println!("(Core) response from visualization {}: {:?}", name, response);
+
+                    match response {
+                        Some(msg) => { let _ = ch_me_listener.send(msg); },
+                        None      => { removed_visualizations.push(name.clone()); },
+                    };
+                }
+            }
+            for name in removed_visualizations {
+                self.stop_visualization(name);
             }
         }
     }
@@ -83,24 +97,27 @@ impl Server {
         response
     }
 
-    fn start_visualization(&mut self, publisher: String, pipeline: String) -> String {
-        let (self_in, self_out) = channel::<Option<MessageIn>>();
+    fn start_visualization(&mut self, publisher: String, configuration: String) -> String {
+        let (ch_window, ch_me_window) = channel::<Option<MessageOut>, Option<MessageIn>>();
 
         let p = publisher.clone();
         thread::spawn(move || {
-            let mut visualization = Visualization::new(self_out, p, pipeline);
+            let mut visualization = Visualization::new(ch_window, p, configuration);
             visualization.run();
         });
 
-        let status = self.visualizations.insert(publisher, self_in);
+        let status = self.visualizations.insert(publisher, ch_me_window);
 
-        match status {
+        let info = match status {
             Some(link) => {
                 let _ = link.send(None);
-                "Warning: closing previous visualization".to_string()
+                "Warning: closing previous visualization\n".to_string()
             }
-            None       => "New visualization started succesfully".to_string()
-        }
+            None       => {
+                String::from("")
+            }
+        };
+        format!("{}New visualization started succesfully", info)
     }
 
     fn stop_visualization(&mut self, publisher: String) -> String {

@@ -1,5 +1,6 @@
-use types::message::MessageIn;
+use types::message::{MessageIn, MessageOut};
 use types::ObjectRenderInfo;
+use types::double_channel::Endpoint;
 use visualization::configuration::Configuration;
 use visualization::render::Renderer;
 
@@ -9,22 +10,20 @@ use image;
 use cgmath;
 use cgmath::{Point3, Vector3, AffineMatrix3};
 
-use std::sync::mpsc::Receiver;
-
 pub struct Visualization {
-    link: Receiver<Option<MessageIn>>,
-    publisher: String,
+    link_core:     Endpoint<Option<MessageOut>, Option<MessageIn>>,
+    publisher:     String,
     configuration: Configuration,
-    renderer: Renderer,
+    renderer:      Renderer,
 }
 
 impl Visualization {
-    pub fn new(link: Receiver<Option<MessageIn>>, publisher: String, config_file: String) -> Visualization {
+    pub fn new(link: Endpoint<Option<MessageOut>, Option<MessageIn>>, publisher: String, config_file: String) -> Visualization {
         Visualization {
-            link: link,
-            publisher: publisher,
+            link_core:     link,
+            publisher:     publisher,
             configuration: Configuration::new(config_file),
-            renderer: Renderer::new(),
+            renderer:      Renderer::new(),
         }
     }
 
@@ -62,7 +61,7 @@ impl Visualization {
         let mut mouse_y = 0;
 
         'main: loop {
-            if let Ok(msg_option) = self.link.try_recv() {
+            if let Ok(msg_option) = self.link_core.try_recv() {
                 match msg_option {
                     Some(msg) => {
                         let render_info = self.configuration.get_render_info(&msg);
