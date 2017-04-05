@@ -52,6 +52,8 @@ impl Listener {
                 let json_response = format!("{}\n", json::as_json(&response).to_string());
                 let _ = stream.write(json_response.as_bytes());
             }
+
+            thread::sleep(Duration::from_millis(10));
         }
     }
 
@@ -145,6 +147,8 @@ impl Listener {
                 for publisher in removed_publishers {
                     publishers.remove(&publisher);
                 }
+
+                thread::sleep(Duration::from_millis(10));
             }
         }
     }

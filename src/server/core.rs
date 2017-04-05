@@ -8,6 +8,7 @@ use std::thread;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::net;
+use std::time::Duration;
 
 pub struct Server {
     port: u32,
@@ -68,6 +69,8 @@ impl Server {
                 let _ = ch_me_console.send(format!("Visualization {} has been stopped", name));
                 self.stop_visualization(name);
             }
+
+            thread::sleep(Duration::from_millis(10));
         }
     }
 

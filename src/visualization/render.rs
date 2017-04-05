@@ -2,30 +2,32 @@ use gl;
 use gl::types::*;
 
 use cgmath;
+use image;
 
 use std::ptr;
 use std::str;
 use std::ffi::CString;
 use std::mem;
+use std::collections::HashMap;
 
 use types::{Geometry, ObjectRenderInfo};
 
 const SQUARE_VERTICES: &'static [GLfloat] = &[
-    -0.5, -0.5, -0.5, 0.0, 1.0,
-    -0.5,  0.5, -0.5, 0.0, 0.0,
-     0.5,  0.5, -0.5, 1.0, 0.0,
-     0.5, -0.5, -0.5, 1.0, 1.0,
+    -0.5, -0.5, -0.5, 0.0, 0.0,
+    -0.5,  0.5, -0.5, 0.0, 1.0,
+     0.5,  0.5, -0.5, 1.0, 1.0,
+     0.5, -0.5, -0.5, 1.0, 0.0,
 ];
 
 const CUBE_VERTICES: &'static [GLfloat] = &[
-     -0.45, -0.45, -0.45, 0.0, 1.0,
-     -0.45,  0.45, -0.45, 0.0, 0.0,
-      0.45,  0.45, -0.45, 1.0, 0.0,
-      0.45, -0.45, -0.45, 1.0, 1.0,
-     -0.45, -0.45,  0.45, 1.0, 0.0,
-     -0.45,  0.45,  0.45, 1.0, 1.0,
-      0.45,  0.45,  0.45, 0.0, 1.0,
-      0.45, -0.45,  0.45, 0.0, 0.0,
+     -0.45, -0.45, -0.45, 0.0, 0.0,
+     -0.45,  0.45, -0.45, 0.0, 1.0,
+      0.45,  0.45, -0.45, 1.0, 1.0,
+      0.45, -0.45, -0.45, 1.0, 0.0,
+     -0.45, -0.45,  0.45, 1.0, 1.0,
+     -0.45,  0.45,  0.45, 1.0, 0.0,
+      0.45,  0.45,  0.45, 0.0, 0.0,
+      0.45, -0.45,  0.45, 0.0, 1.0,
 ];
 
 const SQUARE_INDICES: &'static [GLuint] = &[
@@ -57,6 +59,8 @@ pub struct Renderer {
     texture_id:    Option<GLuint>,
     rbo_depth:     Option<GLuint>,
 
+    textures: HashMap<String, GLuint>,
+
     square_v_buffer: Option<GLuint>,
     square_i_buffer: Option<GLuint>,
 
@@ -84,6 +88,8 @@ impl Renderer {
             texture_id:    None,
             rbo_depth:     None,
 
+            textures: HashMap::<String, GLuint>::new(),
+
             square_v_buffer: None,
             square_i_buffer: None,
 
@@ -101,10 +107,11 @@ impl Renderer {
         }
     }
 
-    pub fn init(&mut self, x: usize, y: usize) {
+    pub fn init(&mut self, x: usize, y: usize, textures: Vec<String>) {
         self.gen_vertex_index_buffers();
         self.resize(x, y);
         self.compile_shaders();
+        self.load_textures(textures);
     }
 
     fn bind_square(&mut self) {
@@ -134,8 +141,8 @@ impl Renderer {
     }
 
     pub fn render(
-            &mut self, objects:
-            &Vec<ObjectRenderInfo>,
+            &mut self,
+            objects: &Vec<ObjectRenderInfo>,
             camera_projection: cgmath::Matrix4<f32>,
             active_object: Option<u32>) {
 
@@ -179,6 +186,10 @@ impl Renderer {
                     program,
                     CString::new("v_tex_uv").unwrap().as_ptr()
                 );
+                let tex_bound_uniform_loc = gl::GetUniformLocation(
+                    program,
+                    CString::new("u_texture_bound").unwrap().as_ptr()
+                );
                 let model_uniform_loc = gl::GetUniformLocation(
                     program,
                     CString::new("u_model").unwrap().as_ptr()
@@ -186,6 +197,14 @@ impl Renderer {
                 let cam_proj_uniform_loc = gl::GetUniformLocation(
                     program,
                     CString::new("u_camera_projection").unwrap().as_ptr()
+                );
+                let tex_uniform_loc = gl::GetUniformLocation(
+                    program,
+                    CString::new("u_texture").unwrap().as_ptr()
+                );
+                let color_uniform_loc = gl::GetUniformLocation(
+                    program,
+                    CString::new("u_color").unwrap().as_ptr()
                 );
                 let id_uniform_loc = gl::GetUniformLocation(
                     program,
@@ -224,6 +243,21 @@ impl Renderer {
                         object.position.1,
                         object.position.2,
                     ));
+
+                    let texture_handle = match self.textures.get(&object.texture_name) {
+                        Some(handle) => handle.clone(),
+                        None         => 0 as GLuint,
+                    };
+                    gl::ActiveTexture(gl::TEXTURE0);
+                    gl::BindTexture(gl::TEXTURE_2D, texture_handle);
+                    gl::Uniform1i(tex_uniform_loc, 0);
+
+                    gl::Uniform1i(tex_bound_uniform_loc, texture_handle as i32);
+
+                    {
+                        let (r, g, b) = object.color;
+                        gl::Uniform3f(color_uniform_loc, r, g, b);
+                    }
 
                     gl::UniformMatrix4fv(
                         model_uniform_loc,
@@ -353,7 +387,7 @@ impl Renderer {
 
                     gl::ReadPixels(
                         x as i32,
-                        (self.y - y - 1) as i32,
+                        y as i32,
                         1,
                         1,
                         gl::RED_INTEGER,
@@ -410,14 +444,9 @@ impl Renderer {
 
             gl::BindTexture(gl::TEXTURE_2D, tex_color_handle);
             gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGBA as i32, x, y, 0, gl::RGBA, gl::UNSIGNED_BYTE, ptr::null());
-            gl::GenerateMipmap(gl::TEXTURE_2D);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST_MIPMAP_LINEAR as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
 
             gl::BindTexture(gl::TEXTURE_2D, tex_id_handle);
             gl::TexImage2D(gl::TEXTURE_2D, 0, gl::R32UI as i32, x, y, 0, gl::RED_INTEGER, gl::UNSIGNED_INT, ptr::null());
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
 
             gl::BindRenderbuffer(gl::RENDERBUFFER, rbo_depth_handle);
             gl::RenderbufferStorage(gl::RENDERBUFFER, gl::DEPTH24_STENCIL8, x, y);
@@ -430,9 +459,13 @@ impl Renderer {
 
             gl::BindTexture(gl::TEXTURE_2D, tex_color_handle);
             gl::FramebufferTexture2D(gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT0, gl::TEXTURE_2D, tex_color_handle, 0);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
 
             gl::BindTexture(gl::TEXTURE_2D, tex_id_handle);
             gl::FramebufferTexture2D(gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT1, gl::TEXTURE_2D, tex_id_handle, 0);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
 
             gl::BindRenderbuffer(gl::RENDERBUFFER, rbo_depth_handle);
             gl::FramebufferRenderbuffer(gl::FRAMEBUFFER, gl::DEPTH_STENCIL_ATTACHMENT, gl::RENDERBUFFER, rbo_depth_handle);
@@ -523,6 +556,26 @@ impl Renderer {
         check_gl_error();
     }
 
+    fn load_textures(&mut self, files: Vec<String>) {
+        self.drop_textures();
+
+        for file in files {
+            match load_texture_from_file(&file) {
+                Some(handle) => { self.textures.insert(file, handle); },
+                None         => { println!("Failed to open file {}", file); },
+            };
+        }
+    }
+
+    fn drop_textures(&mut self) {
+        unsafe {
+            for (_, texture_handle) in &self.textures {
+                gl::DeleteTextures(1, texture_handle as *const GLuint);
+            }
+        }
+        self.textures.clear();
+    }
+
     fn drop_shaders(&mut self) {
         unsafe {
             if let Some(program) = self.scene_program {
@@ -611,6 +664,35 @@ impl Drop for Renderer {
         self.drop_framebuffer_with_attachments();
         self.drop_vertex_index_buffers();
         self.drop_shaders();
+        self.drop_textures();
+    }
+}
+
+fn load_texture_from_file(file: &String) -> Option<GLuint> {
+    match image::open(file) {
+        Ok(bitmap) => {
+            let bitmap = bitmap.to_rgba();
+            let (width, height) = bitmap.dimensions();
+
+            let mut texture_handle: GLuint = 0;
+
+            unsafe {
+                gl::GenTextures(1, &mut texture_handle as *mut GLuint);
+
+                gl::ActiveTexture(gl::TEXTURE0);
+
+                gl::BindTexture(gl::TEXTURE_2D, texture_handle);
+                gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGBA as i32, width as i32, height as i32, 0, gl::RGBA, gl::UNSIGNED_BYTE, mem::transmute(bitmap.into_raw().as_ptr()));
+                gl::GenerateMipmap(gl::TEXTURE_2D);
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR as i32);
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+            }
+
+            check_gl_error();
+
+            Some(texture_handle)
+        },
+        Err(_)  => None
     }
 }
 
@@ -641,7 +723,7 @@ fn compile_shader(src: &[u8], ty: GLenum) -> GLuint {
     shader
 }
 
-//  Same
+//  Same as above
 fn link_simple_program(vs: GLuint, fs: GLuint) -> GLuint { unsafe {
     let program = gl::CreateProgram();
     gl::AttachShader(program, vs);

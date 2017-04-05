@@ -13,6 +13,7 @@ struct TypeInfo {
     texture: String,
     model:   Geometry,
     keys:    HashSet<String>,
+    color:   (u8, u8, u8),
 }
 
 impl TypeInfo {
@@ -21,6 +22,7 @@ impl TypeInfo {
             texture: String::from(""),
             model:   Geometry::Square,
             keys:    HashSet::<String>::new(),
+            color:   (30, 30, 30),
         }
     }
 
@@ -32,8 +34,25 @@ impl TypeInfo {
         match model {
             "square" => self.model = Geometry::Square,
             "cube"   => self.model = Geometry::Cube,
-            &_       => {},
+            _       => {},
         };
+    }
+
+    fn add_keys(&mut self, keys: Vec<&str>) {
+        let keys: Vec<String> = keys.into_iter().map(move |s| String::from(s)).collect();
+        self.keys.extend(keys);
+    }
+
+    fn set_color(&mut self, red: &str, green: &str, blue: &str) {
+        let red = red.parse::<u8>();
+        let green = green.parse::<u8>();
+        let blue = blue.parse::<u8>();
+
+        if red.is_err() || green.is_err() || blue.is_err() {
+            return;
+        }
+
+        self.color = (red.unwrap(), green.unwrap(), blue.unwrap());
     }
 }
 
@@ -61,40 +80,52 @@ impl Configuration {
     fn load_config_file(&mut self, filename: String) {
         self.textures = vec![];
 
-        let type_re = Regex::new(r"#\s+([^\s]+)[^#]*").unwrap();
-        let rule_re = Regex::new(r"([^:\s]+)\s*:\s*([^:\s]+)").unwrap();
+        let section_re  = Regex::new(r"#(?:[^#]*)").unwrap();
+        let header_re   = Regex::new(r"#(TYPE)(?:\s*)(\S*)").unwrap();
+        let rule_re     = Regex::new(r"(\S+)(?:\s*):((?:\s*\S+)+)").unwrap();
+        let argument_re = Regex::new(r"\S+").unwrap();
 
         let mut types = HashMap::<String, TypeInfo>::new();
 
         if let Ok(mut file) = File::open(filename) {
             let mut contents = String::new();
             if let Ok(_) = file.read_to_string(&mut contents) {
-                for type_description in type_re.captures_iter(&contents) {
-                    let type_name = type_description.get(1).unwrap().as_str();
+
+                for section_match in section_re.find_iter(&contents) {
+                    let section = section_match.as_str();
+
+                    let mut type_name = "";
                     let mut type_data = TypeInfo::new();
 
-                    for rule in rule_re.captures_iter(type_description.get(0).unwrap().as_str()) {
-                        let name  = rule.get(1).unwrap().as_str();
-                        let value = rule.get(2).unwrap().as_str();
+                    let lines = section.split('\n').map(|s| s.trim()).filter(|s| s.len() > 0);
+                    for line in lines {
+                        if let Some(header) = header_re.captures(&line) {
+                            type_name = header.get(2).unwrap().as_str();
+                        } else if let Some(rule) = rule_re.captures(&line) {
+                            let attribute = rule.get(1).unwrap().as_str();
+                            let arguments_str = rule.get(2).unwrap().as_str();
 
-                        match name {
-                            "texture"  => {
-                                type_data.set_texture(value);
-                                self.textures.push(String::from(value));
-                            },
-                            "geometry" => {
-                                type_data.set_model(value);
+                            let args: Vec<&str> = argument_re.find_iter(&arguments_str)
+                                .map(|s| s.as_str())
+                                .collect();
+
+                            match (attribute, args.len()) {
+                                ("model", 1)   => type_data.set_model(args[0]),
+                                ("color", 3)   => type_data.set_color(args[0], args[1], args[2]),
+                                ("texture", 1) => {
+                                    type_data.set_texture(args[0]);
+                                    self.textures.push(String::from(args[0]));
+                                },
+                                ("key", _)     => type_data.add_keys(args),
+                                _              => println!("Invalid rule: {}", line),
                             }
-                            "key" => {
-                                type_data.keys.insert(String::from(value));
-                            }
-                            _          => {},
-                        };
+                        }
                     }
 
                     types.insert(String::from(type_name), type_data);
                 }
             }
+
         };
 
         self.textures.sort();
@@ -137,10 +168,13 @@ impl Configuration {
                     None            => None,
                 }.unwrap_or(&default_info);
 
+                let (r, g, b) = type_info.color;
+
                 let info = ObjectRenderInfo {
                     id:           id,
                     model:        type_info.model.clone(),
                     texture_name: type_info.texture.clone(),
+                    color:        (r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0),
                     position:     (x, y, z),
                 };
 

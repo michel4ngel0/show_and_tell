@@ -8,7 +8,6 @@ use visualization::render::Renderer;
 use glutin;
 use glutin::ElementState;
 use gl;
-use image;
 use cgmath;
 
 use std::collections::HashMap;
@@ -49,15 +48,13 @@ impl Visualization {
         //  Initialize OpenGL
         gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
-        self.renderer.init(window_x as usize, window_y as usize);
+        let textures_names = self.configuration.get_texture_names();
+        self.renderer.init(window_x as usize, window_y as usize, textures_names);
 
         //  Camera position
         let mut camera = Camera::new(cgmath::Point3::<f32>::new(0.0, 0.0, 10.0));
 
         let mut active_object: Option<u32> = None;
-
-        let textures_names = self.configuration.get_texture_names();
-        // let textures = Visualization::load_textures(&mut factory, textures_names);
 
         let mut last_message_id: Option<String> = None;
         let mut objects: HashMap<u32, Object> = HashMap::<u32, Object>::new();
@@ -178,49 +175,4 @@ impl Visualization {
 
         let _ = self.link_core.send(None);
     }
-
-    // fn empty_texture<F, R>(factory: &mut F, size: (usize, usize)) -> gfx::handle::ShaderResourceView<R, [f32; 4]>
-    //     where F: gfx::Factory<R>,
-    //           R: gfx::Resources {
-    //
-    //     use gfx::format::Rgba8;
-    //     let (width, height) = size;
-    //     let texture_mem: Vec<u8> = vec!(0; width * height * 4);
-    //     let kind = gfx::texture::Kind::D2(width as u16, height as u16, gfx::texture::AaMode::Single);
-    //     let (_, view) = factory.create_texture_immutable_u8::<Rgba8>(kind, &[texture_mem.as_slice()]).unwrap();
-    //     view
-    // }
-    //
-    // fn load_texture<F, R>(factory: &mut F, filename: &str) -> Option<gfx::handle::ShaderResourceView<R, [f32; 4]>>
-    //     where F: gfx::Factory<R>,
-    //           R: gfx::Resources {
-    //
-    //     use gfx::format::Rgba8;
-    //     match image::open(filename) {
-    //         Ok(img) => {
-    //             let img = img.to_rgba();
-    //             let (width, height) = img.dimensions();
-    //             let kind = gfx::texture::Kind::D2(width as u16, height as u16, gfx::texture::AaMode::Single);
-    //             let (_, view) = factory.create_texture_immutable_u8::<Rgba8>(kind, &[&img]).unwrap();
-    //             Some(view)
-    //         },
-    //         Err(_)  => None
-    //     }
-    // }
-    //
-    // fn load_textures<F, R>(factory: &mut F, files: Vec<String>) -> HashMap<String, gfx::handle::ShaderResourceView<R, [f32; 4]>>
-    //     where F: gfx::Factory<R>,
-    //           R: gfx::Resources {
-    //
-    //     let mut result = HashMap::<String, gfx::handle::ShaderResourceView<R, [f32; 4]>>::new();
-    //     for filename in files {
-    //         match Visualization::load_texture(factory, &filename) {
-    //             Some(tex) => {
-    //                 result.insert(filename, tex);
-    //             },
-    //             None      => {},
-    //         };
-    //     }
-    //     result
-    // }
 }

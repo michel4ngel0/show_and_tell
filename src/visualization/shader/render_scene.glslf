@@ -2,7 +2,9 @@
 
 in vec2 tex_uv;
 
-//uniform sampler2D t_Texture;
+uniform sampler2D u_texture;
+uniform int u_texture_bound;
+uniform vec3 u_color;
 uniform uint u_id;
 uniform float u_selection_highlight;
 
@@ -10,8 +12,7 @@ out vec4 out_color;
 out uint out_index;
 
 void main() {
-    float blue = 1.0 - (tex_uv[0] + tex_uv[1]) / 2.0;
-    out_color = u_selection_highlight * vec4(-1.0, 0.0, 1.0, 0.0) + vec4(tex_uv, blue, 1.0);  //texture(t_Texture, tex_uv);
-
+    out_color = (u_texture_bound != 0) ? texture(u_texture, tex_uv) : vec4(u_color, 1.0);
+    out_color += u_selection_highlight * vec4(-1.0, 0.0, 1.0, 0.0);
     out_index = u_id;
 }

@@ -41,7 +41,7 @@ impl Camera {
         let direction = self.rotation * vec3(shift.x, shift.y, 1.0);
 
         self.position.x -= speed * direction.x;
-        self.position.y += speed * direction.y;
+        self.position.y -= speed * direction.y;
     }
 
     pub fn turn_around(&mut self, turn: Vector2<f32>) {

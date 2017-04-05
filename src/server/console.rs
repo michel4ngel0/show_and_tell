@@ -1,5 +1,6 @@
 use std::io;
 use std::thread;
+use std::time::Duration;
 
 use types::double_channel::{channel, Endpoint};
 
@@ -23,6 +24,8 @@ impl Console {
                 let _ = link.send(trimmed);
                 line.clear();
             }
+
+            thread::sleep(Duration::from_millis(10));
         }
     }
 
@@ -43,6 +46,8 @@ impl Console {
                     println!("=> {}", line.trim());
                 }
             }
+
+            thread::sleep(Duration::from_millis(10));
         }
     }
 }
