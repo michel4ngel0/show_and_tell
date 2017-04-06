@@ -37,7 +37,7 @@ impl Camera {
     }
 
     pub fn step(&mut self, shift: Vector2<f32>) {
-        let speed = 0.05 * self.get_speed();
+        let speed = 0.001 * (self.position.z + 1.0);
         let direction = self.rotation * vec3(shift.x, shift.y, 1.0);
 
         self.position.x -= speed * direction.x;
@@ -63,7 +63,7 @@ impl Camera {
     }
 
     pub fn zoom(&mut self, delta: f32) {
-        let speed = self.get_speed() * delta;
+        let speed = 0.5 * self.get_speed() * delta;
         let forward_vec = self.rotation * INITIAL_DIRECTION;
 
         self.position += speed * forward_vec;
@@ -71,6 +71,8 @@ impl Camera {
 
     fn get_speed(&self) -> f32 {
         let height = self.position.z;
-        0.5 * if height <= 10.0 { 1.0 } else { (E as f32).powf((height - 10.0) * 0.02) }
+        let mut result = if height <= 10.0 { 1.0 } else { (E as f32).powf((height - 10.0) * 0.02) };
+        if result >= 1000.0 { result = 1000.0 }
+        result
     }
 }

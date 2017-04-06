@@ -11,12 +11,13 @@ use gl;
 use cgmath;
 
 use std::collections::HashMap;
+use std::time::{Instant};
+use std::f64::consts::PI;
 
 pub struct Visualization {
     link_core:     Endpoint<Option<MessageOut>, Option<MessageIn>>,
     publisher:     String,
     configuration: Configuration,
-    renderer:      Renderer,
 }
 
 impl Visualization {
@@ -25,16 +26,16 @@ impl Visualization {
             link_core:     link,
             publisher:     publisher,
             configuration: Configuration::new(config_file),
-            renderer:      Renderer::new(),
         }
     }
 
     pub fn run(&mut self) {
         let window_name = format!("[{}]", self.publisher);
+        let (mut window_x, mut window_y) = (800, 600);
 
         let window = glutin::WindowBuilder::new()
             .with_title(window_name)
-            .with_dimensions(800, 600)
+            .with_dimensions(window_x, window_y)
             .with_vsync()
             .with_gl(glutin::GlRequest::Latest)
             .build_strict()
@@ -42,17 +43,16 @@ impl Visualization {
         unsafe { window.make_current() }
             .expect("Failed to set current context");
 
-        let (window_x, window_y) = window.get_inner_size()
-            .expect("Couldn't access window's size");
-
         //  Initialize OpenGL
         gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
         let textures_names = self.configuration.get_texture_names();
-        self.renderer.init(window_x as usize, window_y as usize, textures_names);
+        let mut renderer = Renderer::new(window_x as usize, window_y as usize, textures_names);
 
         //  Camera position
         let mut camera = Camera::new(cgmath::Point3::<f32>::new(0.0, 0.0, 10.0));
+
+        let time_start = Instant::now();
 
         let mut active_object: Option<u32> = None;
 
@@ -84,6 +84,9 @@ impl Visualization {
                 };
             }
 
+            let time_now = Instant::now();
+            let time_from_start = time_now - time_start;
+
             for event in window.poll_events() {
                 use glutin::Event::*;
 
@@ -92,7 +95,9 @@ impl Visualization {
                         break 'main
                     },
                     Resized(x, y) => {
-                        self.renderer.resize(x as usize, y as usize);
+                        window_x = x;
+                        window_y = y;
+                        renderer.resize(x as usize, y as usize);
                     },
 
                     MouseWheel(glutin::MouseScrollDelta::LineDelta(_, y), _) => {
@@ -102,7 +107,7 @@ impl Visualization {
                         let prev_pos = mouse_pos;
 
                         mouse_x = x as i32;
-                        mouse_y = window.get_inner_size().unwrap().1 as i32 - y - 1;
+                        mouse_y = window_y as i32 - y - 1;
 
                         mouse_pos = cgmath::Point2::<f32>::new(mouse_x as f32, mouse_y as f32);
 
@@ -126,7 +131,7 @@ impl Visualization {
                         };
 
                         if state == Pressed && button == Left {
-                            let id = self.renderer.get_id((mouse_x as usize, mouse_y as usize));
+                            let id = renderer.get_id((mouse_x as usize, mouse_y as usize));
                             active_object = id;
                         }
                     },
@@ -167,7 +172,16 @@ impl Visualization {
             let proj = cgmath::perspective(cgmath::Deg(50.0f32), aspect_ratio, 0.01, 1000.0);
             let camera_projection = (proj * camera_transformation).into();
 
-            self.renderer.render(&render_info, camera_projection, active_object);
+            let phi = (time_from_start.as_secs() as f64 + ((time_from_start.subsec_nanos() as f64) / 1000000000.0)) % (2.0 * PI);
+            let mut strings: Vec<String> = vec![];
+            if let Some(id) = active_object {
+                if let Some(object) = objects.get(&id) {
+                    for (attribute, value) in object {
+                        strings.push(format!("{}: {}", attribute, value));
+                    }
+                }
+            }
+            renderer.render(&render_info, camera_projection, active_object, strings, phi);
 
             window.swap_buffers()
                 .expect("Failed to swap buffers");

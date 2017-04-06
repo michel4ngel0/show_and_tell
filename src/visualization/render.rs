@@ -9,6 +9,7 @@ use std::str;
 use std::ffi::CString;
 use std::mem;
 use std::collections::HashMap;
+use std::f64::consts::PI;
 
 use types::{Geometry, ObjectRenderInfo};
 
@@ -59,6 +60,8 @@ pub struct Renderer {
     texture_id:    Option<GLuint>,
     rbo_depth:     Option<GLuint>,
 
+    texture_font: Option<GLuint>,
+
     textures: HashMap<String, GLuint>,
 
     square_v_buffer: Option<GLuint>,
@@ -73,13 +76,16 @@ pub struct Renderer {
     quad_v_shader:  Option<GLuint>,
     quad_f_shader:  Option<GLuint>,
     quad_program:   Option<GLuint>,
+    glyph_v_shader:  Option<GLuint>,
+    glyph_f_shader:  Option<GLuint>,
+    glyph_program:   Option<GLuint>,
 
     used_model: Option<Geometry>,
 }
 
 impl Renderer {
-    pub fn new() -> Renderer {
-        Renderer {
+    pub fn new(x: usize, y: usize, textures: Vec<String>) -> Renderer {
+        let mut new_renderer = Renderer {
             x: 0,
             y: 0,
 
@@ -87,6 +93,8 @@ impl Renderer {
             texture_color: None,
             texture_id:    None,
             rbo_depth:     None,
+
+            texture_font: None,
 
             textures: HashMap::<String, GLuint>::new(),
 
@@ -102,16 +110,22 @@ impl Renderer {
             quad_v_shader:  None,
             quad_f_shader:  None,
             quad_program:   None,
+            glyph_v_shader: None,
+            glyph_f_shader: None,
+            glyph_program:  None,
 
             used_model: None,
-        }
+        };
+        new_renderer.init(x, y, textures);
+        new_renderer
     }
 
-    pub fn init(&mut self, x: usize, y: usize, textures: Vec<String>) {
+    fn init(&mut self, x: usize, y: usize, textures: Vec<String>) {
         self.gen_vertex_index_buffers();
         self.resize(x, y);
         self.compile_shaders();
         self.load_textures(textures);
+        self.load_font();
     }
 
     fn bind_square(&mut self) {
@@ -144,13 +158,16 @@ impl Renderer {
             &mut self,
             objects: &Vec<ObjectRenderInfo>,
             camera_projection: cgmath::Matrix4<f32>,
-            active_object: Option<u32>) {
+            active_object: Option<u32>,
+            strings: Vec<String>,
+            phi: f64) {
 
         let framebuffer = self.framebuffer
             .expect("Cannot render, framebuffer has not been initialized");
 
         unsafe {
             gl::Enable(gl::DEPTH_TEST);
+            gl::Enable(gl::BLEND);
         }
 
         //  Draw to the framebuffer
@@ -168,7 +185,8 @@ impl Renderer {
             gl::Clear(gl::COLOR_BUFFER_BIT);
 
             gl::DrawBuffer(gl::COLOR_ATTACHMENT1);
-            gl::ClearBufferuiv(gl::COLOR, 1, &u32::max_value());
+            gl::ClearColor(1.0, 1.0, 1.0, 1.0);
+            gl::Clear(gl::COLOR_BUFFER_BIT);
 
             let buffers: [GLenum; 2] = [gl::COLOR_ATTACHMENT0, gl::COLOR_ATTACHMENT1];
             gl::DrawBuffers(2, &(buffers[0]) as *const GLenum);
@@ -232,11 +250,21 @@ impl Renderer {
                         }
                     }
 
-                    let highlight: f32 = match active_object {
-                        Some(id) => if id == object.id { 0.4 } else { 0.0 },
-                        None     => 0.0,
-                    };
-                    gl::Uniform1f(highlight_uniform_loc, highlight);
+                    if let Some(id) = active_object {
+                        if id == object.id {
+                            let phi = 8.0 * phi;
+                            gl::Uniform3f(
+                                highlight_uniform_loc,
+                                phi.sin() as f32,
+                                (phi + 2.0 * PI / 3.0).sin() as f32,
+                                (phi + 4.0 * PI / 3.0).sin() as f32
+                            );
+                        } else {
+                            gl::Uniform3f(highlight_uniform_loc, 0.0, 0.0, 0.0);
+                        }
+                    } else {
+                        gl::Uniform3f(highlight_uniform_loc, 0.0, 0.0, 0.0);
+                    }
 
                     let model_matrix = cgmath::Matrix4::from_translation(cgmath::Vector3::<f32>::new(
                         object.position.0,
@@ -303,7 +331,125 @@ impl Renderer {
             gl::Flush();
         }
 
-        check_gl_error();
+        check_gl_error("rendering to framebuffer");
+
+        //  Draw strings
+        unsafe {
+            const FONT_HEIGHT: f32 = 16.0;
+            const FONT_WIDTH: f32 = 8.0;
+            let screen_width = self.x as f32;
+            let screen_height = self.y as f32;
+
+            gl::BindFramebuffer(gl::FRAMEBUFFER, self.framebuffer.unwrap());
+
+            gl::DepthFunc(gl::ALWAYS);
+            gl::BlendFuncSeparate(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA, gl::ZERO, gl::ONE);
+
+            gl::DrawBuffer(gl::COLOR_ATTACHMENT0);
+
+            check_gl_error("drawbuffers");
+
+            if let Some(program) = self.glyph_program {
+                gl::UseProgram(program);
+                gl::BindFragDataLocation(program, 0, CString::new("out_color").unwrap().as_ptr());
+
+                let pos_attribute = gl::GetAttribLocation(
+                    program,
+                    CString::new("v_pos_xy").unwrap().as_ptr()
+                );
+                let tex_attribute = gl::GetAttribLocation(
+                    program,
+                    CString::new("v_tex_uv").unwrap().as_ptr()
+                );
+
+                gl::ActiveTexture(gl::TEXTURE0);
+                gl::BindTexture(gl::TEXTURE_2D, self.texture_font.unwrap());
+                let texture_uniform_loc = gl::GetUniformLocation(
+                    program,
+                    CString::new("u_font_bitmap").unwrap().as_ptr()
+                );
+                gl::Uniform1i(texture_uniform_loc, 0);
+                check_gl_error("texture");
+
+                let transform_uniform_loc = gl::GetUniformLocation(
+                    program,
+                    CString::new("u_transform").unwrap().as_ptr()
+                );
+                let tex_u_uniform_loc = gl::GetUniformLocation(
+                    program,
+                    CString::new("tex_u").unwrap().as_ptr()
+                );
+                let tex_v_uniform_loc = gl::GetUniformLocation(
+                    program,
+                    CString::new("tex_v").unwrap().as_ptr()
+                );
+
+                self.bind_square();
+
+                gl::EnableVertexAttribArray(pos_attribute as GLuint);
+                gl::EnableVertexAttribArray(tex_attribute as GLuint);
+                gl::VertexAttribPointer(
+                    pos_attribute as GLuint,
+                    2,
+                    gl::FLOAT,
+                    gl::FALSE as GLboolean,
+                    (5 * mem::size_of::<GLfloat>()) as i32,
+                    ptr::null()
+                );
+                gl::VertexAttribPointer(
+                    tex_attribute as GLuint,
+                    2,
+                    gl::FLOAT,
+                    gl::FALSE as GLboolean,
+                    (5 * mem::size_of::<GLfloat>()) as i32,
+                    mem::transmute(3 * mem::size_of::<GLfloat>())
+                );
+
+                let mut x_pos = 0.0;
+                let mut y_pos = screen_height;
+                for text in strings {
+                    //  New Line
+                    y_pos -= FONT_HEIGHT;
+                    x_pos = 0.0;
+
+                    let ascii = string_to_renderable(text);
+                    for byte in ascii {
+                        if byte == 10 { /* /n */
+                            y_pos -= FONT_HEIGHT;
+                            x_pos = 0.0;
+                        } else if byte == 9 { /* /t */
+                            x_pos += 4.0;
+                        } else {
+                            let (tex_u, tex_v) = get_glyph_position(byte);
+                            gl::Uniform1f(tex_u_uniform_loc, tex_u);
+                            gl::Uniform1f(tex_v_uniform_loc, tex_v);
+
+                            let transform = cgmath::Matrix3::<f32>::new(
+                                2.0 * FONT_WIDTH / screen_width, 0.0, 0.0,
+                                0.0, 2.0 * FONT_HEIGHT / screen_height, 0.0,
+                                (2.0 * x_pos + FONT_WIDTH - screen_width) / screen_width, (2.0 * y_pos + FONT_HEIGHT - screen_height) / screen_height, 1.0
+                            );
+                            gl::UniformMatrix3fv(
+                                transform_uniform_loc,
+                                1,
+                                gl::FALSE,
+                                mem::transmute(&transform)
+                            );
+
+                            gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, ptr::null());
+                            x_pos += FONT_WIDTH;
+                        }
+                    }
+                }
+
+                gl::DisableVertexAttribArray(pos_attribute as GLuint);
+                gl::DisableVertexAttribArray(tex_attribute as GLuint);
+            }
+
+            gl::Flush();
+        }
+
+        check_gl_error("drawing strings");
 
         //  Draw on the screen
         unsafe {
@@ -367,7 +513,7 @@ impl Renderer {
             gl::Flush();
         }
 
-        check_gl_error();
+        check_gl_error("rendering to window");
     }
 
     pub fn get_id(&self, size: (usize, usize)) -> Option<u32> {
@@ -398,9 +544,9 @@ impl Renderer {
                     gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
                 }
 
-                check_gl_error();
+                check_gl_error("reading object id");
 
-                if id == u32::max_value() { None } else { Some(id) }
+                if id > 1000000000 { None } else { Some(id) }
             },
             None => None,
         }
@@ -430,14 +576,12 @@ impl Renderer {
             gl::GenRenderbuffers(1, &mut rbo_depth_handle as *mut GLuint);
         }
 
-        check_gl_error();
+        check_gl_error("generating framebuffer");
 
         if tex_id_handle == 0 || rbo_depth_handle == 0 || framebuff_handle == 0 {
             self.drop_framebuffer_with_attachments();
             return;
         }
-
-        check_gl_error();
 
         unsafe {
             gl::ActiveTexture(gl::TEXTURE0);
@@ -452,7 +596,7 @@ impl Renderer {
             gl::RenderbufferStorage(gl::RENDERBUFFER, gl::DEPTH24_STENCIL8, x, y);
         }
 
-        check_gl_error();
+        check_gl_error("creating textures");
 
         unsafe {
             gl::BindFramebuffer(gl::FRAMEBUFFER, framebuff_handle);
@@ -471,7 +615,7 @@ impl Renderer {
             gl::FramebufferRenderbuffer(gl::FRAMEBUFFER, gl::DEPTH_STENCIL_ATTACHMENT, gl::RENDERBUFFER, rbo_depth_handle);
         }
 
-        check_gl_error();
+        check_gl_error("binding render targets");
 
         check_framebuffer_status();
 
@@ -496,7 +640,7 @@ impl Renderer {
             gl::GenBuffers(1, &mut cube_i_handle as *mut GLuint);
         }
 
-        check_gl_error();
+        check_gl_error("generating buffers");
 
         unsafe {
             gl::BindBuffer(gl::ARRAY_BUFFER, square_v_handle);
@@ -532,7 +676,7 @@ impl Renderer {
             );
         }
 
-        check_gl_error();
+        check_gl_error("initializing buffers");
 
         self.square_v_buffer = Some(square_v_handle);
         self.square_i_buffer = Some(square_i_handle);
@@ -547,13 +691,19 @@ impl Renderer {
         self.scene_f_shader = Some(compile_shader(include_bytes!("shader/render_scene.glslf"), gl::FRAGMENT_SHADER));
         self.scene_program  = Some(link_simple_program(self.scene_v_shader.unwrap(), self.scene_f_shader.unwrap()));
 
-        check_gl_error();
+        check_gl_error("compiling shaders");
 
         self.quad_v_shader = Some(compile_shader(include_bytes!("shader/quad.glslv"), gl::VERTEX_SHADER));
         self.quad_f_shader = Some(compile_shader(include_bytes!("shader/quad.glslf"), gl::FRAGMENT_SHADER));
         self.quad_program  = Some(link_simple_program(self.quad_v_shader.unwrap(), self.quad_f_shader.unwrap()));
 
-        check_gl_error();
+        check_gl_error("compiling shaders");
+
+        self.glyph_v_shader = Some(compile_shader(include_bytes!("shader/glyph.glslv"), gl::VERTEX_SHADER));
+        self.glyph_f_shader = Some(compile_shader(include_bytes!("shader/glyph.glslf"), gl::FRAGMENT_SHADER));
+        self.glyph_program  = Some(link_simple_program(self.glyph_v_shader.unwrap(), self.glyph_f_shader.unwrap()));
+
+        check_gl_error("compiling shaders");
     }
 
     fn load_textures(&mut self, files: Vec<String>) {
@@ -567,6 +717,28 @@ impl Renderer {
         }
     }
 
+    fn load_font(&mut self) {
+        self.drop_font();
+
+        let texture_handle = load_texture_from_file(&String::from("resources/ascii.png"))
+            .expect("Could not load the font bitmap");
+
+        self.texture_font = Some(texture_handle);
+
+        check_gl_error("loading font bitmap");
+    }
+
+    fn drop_font(&mut self) {
+        unsafe {
+            if let Some(texture_handle) = self.texture_font {
+                gl::DeleteTextures(1, &texture_handle as *const GLuint);
+            }
+        }
+        self.texture_font = None;
+
+        check_gl_error("dropping font bitmap");
+    }
+
     fn drop_textures(&mut self) {
         unsafe {
             for (_, texture_handle) in &self.textures {
@@ -574,6 +746,8 @@ impl Renderer {
             }
         }
         self.textures.clear();
+
+        check_gl_error("dropping textures");
     }
 
     fn drop_shaders(&mut self) {
@@ -585,6 +759,10 @@ impl Renderer {
             if let Some(program) = self.quad_program {
                 gl::DeleteProgram(program);
                 self.quad_program = None;
+            }
+            if let Some(program) = self.glyph_program {
+                gl::DeleteProgram(program);
+                self.glyph_program = None;
             }
             if let Some(shader) = self.scene_v_shader {
                 gl::DeleteShader(shader);
@@ -602,9 +780,17 @@ impl Renderer {
                 gl::DeleteShader(shader);
                 self.quad_f_shader = None;
             }
+            if let Some(shader) = self.glyph_v_shader {
+                gl::DeleteShader(shader);
+                self.glyph_v_shader = None;
+            }
+            if let Some(shader) = self.glyph_f_shader {
+                gl::DeleteShader(shader);
+                self.glyph_f_shader = None;
+            }
         }
 
-        check_gl_error();
+        check_gl_error("dropping shaders");
     }
 
     fn drop_framebuffer_with_attachments(&mut self) {
@@ -632,6 +818,8 @@ impl Renderer {
             }
             self.framebuffer = None;
         }
+
+        check_gl_error("dropping framebuffer");
     }
 
     fn drop_vertex_index_buffers(&mut self) {
@@ -656,6 +844,8 @@ impl Renderer {
             }
             self.cube_i_buffer = None;
         }
+
+        check_gl_error("dropping buffers");
     }
 }
 
@@ -665,6 +855,9 @@ impl Drop for Renderer {
         self.drop_vertex_index_buffers();
         self.drop_shaders();
         self.drop_textures();
+        self.drop_font();
+
+        check_gl_error("dropping resources");
     }
 }
 
@@ -688,7 +881,7 @@ fn load_texture_from_file(file: &String) -> Option<GLuint> {
                 gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
             }
 
-            check_gl_error();
+            check_gl_error("loading textures");
 
             Some(texture_handle)
         },
@@ -745,6 +938,25 @@ fn link_simple_program(vs: GLuint, fs: GLuint) -> GLuint { unsafe {
     program
 } }
 
+fn string_to_renderable(text: String) -> Vec<u8> {
+    let mut result: Vec<u8> = Vec::<u8>::new();
+
+    for mut byte in text.into_bytes() {
+        if byte > 127 { continue; }
+        result.push(byte);
+    }
+
+    result
+}
+
+fn get_glyph_position(mut byte: u8) -> (f32, f32) {
+    byte = if byte < 32 { 0 } else { byte - 32 };
+    let (x, y) = (byte % 16, byte / 16);
+    let (x, y) = (x as f32 / 16.0, y as f32 / 6.0);
+    // let y = 1.0 - y - (1.0 / 6.0);
+    (x, y)
+}
+
 fn check_framebuffer_status() {
     unsafe {
         let status: u32 = gl::CheckFramebufferStatus(gl::FRAMEBUFFER);
@@ -775,10 +987,10 @@ fn check_framebuffer_status() {
         }
     }
 
-    check_gl_error();
+    check_gl_error("checking framebuffer status");
 }
 
-fn check_gl_error() {
+fn check_gl_error(when: &str) {
     unsafe {
         let error = gl::GetError();
 
@@ -795,7 +1007,7 @@ fn check_gl_error() {
                 _ => "unknown",
             };
 
-            println!("OpenGL error: {}", error_msg);
+            println!("OpenGL error: {} ({})", error_msg, when);
             // panic!();
         }
     }
