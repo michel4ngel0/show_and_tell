@@ -43,7 +43,7 @@ impl Console {
 
             if let Ok(response) = self.link_core.try_recv() {
                 for line in response.split("\n") {
-                    println!("=> {}", line.trim());
+                    println!(">>> {}", line.trim());
                 }
             }
 

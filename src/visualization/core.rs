@@ -13,6 +13,7 @@ use cgmath;
 use std::collections::HashMap;
 use std::time::{Instant};
 use std::f64::consts::PI;
+use std::cmp::max;
 
 pub struct Visualization {
     link_core:     Endpoint<Option<MessageOut>, Option<MessageIn>>,
@@ -59,6 +60,7 @@ impl Visualization {
         let mut last_message_id: Option<String> = None;
         let mut objects: HashMap<u32, Object> = HashMap::<u32, Object>::new();
         let mut render_info: Vec<ObjectRenderInfo> = vec![];
+        let mut permanent_info: HashMap<u32, ObjectRenderInfo> = HashMap::<u32, ObjectRenderInfo>::new();
 
         let mut mouse_x = 0;
         let mut mouse_y = 0;
@@ -83,6 +85,11 @@ impl Visualization {
                     },
                 };
             }
+
+            for object in render_info.clone() {
+                if let Some(id) = object.permanent_id { let _ = permanent_info.insert(id, object.clone()); }
+            }
+            render_info = render_info.into_iter().filter(|object| object.permanent_id.is_none() ).collect();
 
             let time_now = Instant::now();
             let time_from_start = time_now - time_start;
@@ -176,12 +183,10 @@ impl Visualization {
             let mut strings: Vec<String> = vec![];
             if let Some(id) = active_object {
                 if let Some(object) = objects.get(&id) {
-                    for (attribute, value) in object {
-                        strings.push(format!("{}: {}", attribute, value));
-                    }
+                    strings = sort_stats(&object);
                 }
             }
-            renderer.render(&render_info, camera_projection, active_object, strings, phi);
+            renderer.render(&render_info, &permanent_info, camera_projection, active_object, strings, phi);
 
             window.swap_buffers()
                 .expect("Failed to swap buffers");
@@ -189,4 +194,27 @@ impl Visualization {
 
         let _ = self.link_core.send(None);
     }
+}
+
+fn sort_stats(object: &Object) -> Vec<String> {
+    use std::cmp::Ordering::*;
+    use std::ops::Deref;
+
+    let mut stats: Vec<(&String, &String)> = object.iter().collect();
+    stats.sort_by(|lhs, rhs| {
+        match (lhs.0.as_str(), rhs.0.as_str()) {
+            ("id", _)   => Less,
+            (_, "id")   => Greater,
+            ("type", _) => Less,
+            (_, "type") => Greater,
+            (_, _)      => lhs.partial_cmp(&rhs).unwrap(),
+        }
+    });
+
+    let mut longest = 0;
+    for &(attribute, _) in &stats { longest = max(longest, attribute.len()); }
+
+    stats.iter()
+        .map(|&(attribute, value)| format!("{:len$}: {}", attribute.clone(), value, len = longest) )
+        .collect()
 }

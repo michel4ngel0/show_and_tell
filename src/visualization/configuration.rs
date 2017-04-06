@@ -159,6 +159,8 @@ impl Configuration {
         let (render_info, details): (Vec<ObjectRenderInfo>, Vec<Option<(u32, Object)>>) = msg.objects.iter()
             .map(|obj: &Object| -> (ObjectRenderInfo, Option<(u32, Object)>) {
                 let id = obj.get("id").unwrap_or(&empty_str).parse::<u32>().unwrap_or(u32::max_value());
+                let permanent_id = obj.get("permanent_id").unwrap_or(&empty_str).parse::<u32>();
+                let permanent_id = if let Ok(id) = permanent_id { Some(id) } else { None };
                 let x = obj.get("x").unwrap_or(&empty_str).parse::<f32>().unwrap_or(0.0);
                 let y = obj.get("y").unwrap_or(&empty_str).parse::<f32>().unwrap_or(0.0);
                 let z = obj.get("z").unwrap_or(&empty_str).parse::<f32>().unwrap_or(0.0);
@@ -171,11 +173,12 @@ impl Configuration {
                 let (r, g, b) = type_info.color;
 
                 let info = ObjectRenderInfo {
-                    id:           id,
-                    model:        type_info.model.clone(),
-                    texture_name: type_info.texture.clone(),
-                    color:        (r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0),
-                    position:     (x, y, z),
+                    id:            id,
+                    permanent_id: permanent_id,
+                    model:         type_info.model.clone(),
+                    texture_name:  type_info.texture.clone(),
+                    color:         (r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0),
+                    position:      (x, y, z),
                 };
 
                 let details_option = if id == u32::max_value() { None } else { Some((id, obj.clone())) };

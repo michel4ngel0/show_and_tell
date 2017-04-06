@@ -71,8 +71,7 @@ impl Camera {
 
     fn get_speed(&self) -> f32 {
         let height = self.position.z;
-        let mut result = if height <= 10.0 { 1.0 } else { (E as f32).powf((height - 10.0) * 0.02) };
-        if result >= 1000.0 { result = 1000.0 }
+        let mut result = if height <= 10.0 { 1.0 } else { 0.1 * (height - 10.0) + 1.0 };
         result
     }
 }

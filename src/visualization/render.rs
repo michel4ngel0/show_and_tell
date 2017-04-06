@@ -132,7 +132,7 @@ impl Renderer {
         unsafe {
             match self.used_model {
                 Some(Geometry::Square) => {},
-                _                    => {
+                _                      => {
                     gl::BindBuffer(gl::ARRAY_BUFFER, self.square_v_buffer.unwrap());
                     gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.square_i_buffer.unwrap());
                     self.used_model = Some(Geometry::Square);
@@ -157,6 +157,7 @@ impl Renderer {
     pub fn render(
             &mut self,
             objects: &Vec<ObjectRenderInfo>,
+            persistent: &HashMap<u32, ObjectRenderInfo>,
             camera_projection: cgmath::Matrix4<f32>,
             active_object: Option<u32>,
             strings: Vec<String>,
@@ -240,7 +241,7 @@ impl Renderer {
                     mem::transmute(&camera_projection)
                 );
 
-                for object in objects {
+                let mut draw_object = |object: &ObjectRenderInfo| {
                     match object.model {
                         Geometry::Square => {
                             self.bind_square();
@@ -316,13 +317,20 @@ impl Renderer {
 
                     match object.model {
                         Geometry::Square => {
-                            gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, ptr::null());
+                            gl::DrawElements(gl::TRIANGLES, SQUARE_INDICES.len() as i32, gl::UNSIGNED_INT, ptr::null());
                         },
                         Geometry::Cube   => {
-                            gl::DrawElements(gl::TRIANGLES, 36, gl::UNSIGNED_INT, ptr::null());
+                            gl::DrawElements(gl::TRIANGLES, CUBE_INDICES.len() as i32, gl::UNSIGNED_INT, ptr::null());
                         }
                     }
                 };
+
+                for object in objects {
+                    draw_object(object);
+                };
+                for (_, object) in persistent {
+                    draw_object(object);
+                }
 
                 gl::DisableVertexAttribArray(pos_attribute as GLuint);
                 gl::DisableVertexAttribArray(tex_attribute as GLuint);
@@ -436,7 +444,7 @@ impl Renderer {
                                 mem::transmute(&transform)
                             );
 
-                            gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, ptr::null());
+                            gl::DrawElements(gl::TRIANGLES, SQUARE_INDICES.len() as i32, gl::UNSIGNED_INT, ptr::null());
                             x_pos += FONT_WIDTH;
                         }
                     }
@@ -504,7 +512,7 @@ impl Renderer {
                     mem::transmute(3 * mem::size_of::<GLfloat>())
                 );
 
-                gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, ptr::null());
+                gl::DrawElements(gl::TRIANGLES, SQUARE_INDICES.len() as i32, gl::UNSIGNED_INT, ptr::null());
 
                 gl::DisableVertexAttribArray(pos_attribute as GLuint);
                 gl::DisableVertexAttribArray(tex_attribute as GLuint);
