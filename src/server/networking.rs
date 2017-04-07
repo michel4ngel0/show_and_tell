@@ -45,7 +45,17 @@ impl Listener {
                         };
                     }
                 },
-                Err(_) => { },
+                Err(error) => {
+                    use std::io::ErrorKind::*;
+
+                    match error.kind() {
+                        WouldBlock | TimedOut => {},
+                        _ => {
+                            println!("(Connection) {:?}", error);
+                            break;
+                        },
+                    }
+                },
             }
 
             if let Ok(response) = link.try_recv() {
@@ -55,6 +65,8 @@ impl Listener {
 
             thread::sleep(Duration::from_millis(10));
         }
+
+        let _ = link.send(None);
     }
 
     fn listen_to_clients(address: Ipv4Addr, port: u32, link: Endpoint<ConnectionData, ()>) {

@@ -6,14 +6,16 @@ use visualization::core::Visualization;
 
 use std::thread;
 use std::collections::HashMap;
-use std::fmt::Write;
 use std::net;
-use std::time::Duration;
+use std::time::{Instant, Duration};
+use std::fs::File;
+use std::io::Write;
 
 pub struct Server {
     port: u32,
     address: net::Ipv4Addr,
     visualizations: HashMap<String, Endpoint<Option<MessageIn>, Option<MessageOut>>>,
+    traffic_log_file: Option<(File, String)>,
 }
 
 impl Server {
@@ -22,6 +24,7 @@ impl Server {
             port: port,
             address: address,
             visualizations: HashMap::<String, Endpoint<Option<MessageIn>, Option<MessageOut>>>::new(),
+            traffic_log_file: None,
         }
     }
 
@@ -45,22 +48,41 @@ impl Server {
         }
 
         loop {
+            let time_now = Instant::now();
+
             if let Ok(msg) = ch_me_listener.try_recv() {
                 if let Some(link) = self.visualizations.get(&msg.publisher) {
+                    let log = format!("{:?}\n", msg);
+                    match self.traffic_log_file {
+                        None => {},
+                        Some((ref mut file, _)) => { let _ = file.write(log.as_bytes()); },
+                    }
                     let _ = link.send(Some(msg));
                 }
             }
 
             if let Ok(command) = ch_me_console.try_recv() {
-                let response = self.execute_command(command);
+                let (response, quit) = self.execute_command(command);
                 let _ = ch_me_console.send(response);
+
+                if quit {
+                    thread::sleep(Duration::from_millis(50));
+                    break;
+                }
             }
 
             let mut removed_visualizations: Vec<String> = vec![];
             for (name, link) in &self.visualizations {
                 if let Ok(response) = link.try_recv() {
                     match response {
-                        Some(msg) => { let _ = ch_me_listener.send(msg); },
+                        Some(msg) => {
+                            let log = format!("{:?}\n", msg);
+                            match self.traffic_log_file {
+                                None => {},
+                                Some((ref mut file, _)) => { let _ = file.write(log.as_bytes()); },
+                            }
+                            let _ = ch_me_listener.send(msg);
+                        },
                         None      => { removed_visualizations.push(name.clone()); },
                     };
                 }
@@ -74,24 +96,29 @@ impl Server {
         }
     }
 
-    fn execute_command(&mut self, command: String) -> String {
+    fn execute_command(&mut self, command: String) -> (String, bool) {
         let words: Vec<&str> = command.split(" ").collect();
 
         if words.len() == 0 {
-            return "".to_string();
+            return ("".to_string(), false);
         }
 
         match (words[0], words.len()) {
-            ("list", 1)  => self.print_visualizations(),
-            ("start", 3) => self.start_visualization(words[1].to_string(), words[2].to_string()),
-            ("stop", 2)  => self.stop_visualization(words[1].to_string()),
-            (cmd @ _, _) => format!("unknown command: \"{}\"", cmd).to_string(),
+            ("list", 1)   => (self.print_visualizations(), false),
+            ("start", 3)  => (self.start_visualization(words[1].to_string(), words[2].to_string()), false),
+            ("close", 2)  => (self.stop_visualization(words[1].to_string()), false),
+            ("log", 2) |
+            ("log", 3)    => (self.launch_or_stop_traffic_log(words), false),
+            ("quit", 1) |
+            ("exit", 1)   => (String::from("Shutting down"), true),
+            (cmd @ _, _)  => (format!("Unknown command: \"{}\"", cmd).to_string(), false),
         }
     }
 
     fn print_visualizations(&self) -> String {
         let mut response = "Running visualizations:".to_string();
 
+        use std::fmt::Write as FmtWrite;
         for (publisher, _) in &self.visualizations {
             let _ = write!(&mut response, "\n{}", publisher);
         }
@@ -129,6 +156,35 @@ impl Server {
                 format!("Visualization {} stopped succesfully", publisher)
             },
             None       => format!("Visualization {} isn't currently running", publisher),
+        }
+    }
+
+    fn launch_or_stop_traffic_log(&mut self, args: Vec<&str>) -> String {
+        use std::path::Path;
+
+        match (args[1], args.len()) {
+            ("start", 3) => {
+                let filename = args[2];
+                let path = Path::new(&filename);
+                match File::create(path) {
+                    Err(_) => {
+                        format!("Failed to open {}", filename)
+                    },
+                    Ok(handle) => {
+                        self.traffic_log_file = Some((handle, filename.to_string()));
+                        format!("Saving logs to {}", filename)
+                    }
+                }
+            }
+            ("stop", 2)  => {
+                let status = match self.traffic_log_file {
+                    None                    => format!("No logger running"),
+                    Some((_, ref mut name)) => format!("Logs saved to {}", name),
+                };
+                self.traffic_log_file = None;
+                status
+            },
+            _            => format!("Invalid command: \"{}\"", args.join(" "))
         }
     }
 }

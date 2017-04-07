@@ -42,8 +42,8 @@ impl Console {
             }
 
             if let Ok(response) = self.link_core.try_recv() {
-                for line in response.split("\n") {
-                    println!(">>> {}", line.trim());
+                for (i, line) in response.split("\n").enumerate() {
+                    println!("{} {}", if i == 0 { ">>>" } else { "..." } , line.trim());
                 }
             }
 
