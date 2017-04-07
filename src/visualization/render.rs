@@ -21,14 +21,43 @@ const SQUARE_VERTICES: &'static [GLfloat] = &[
 ];
 
 const CUBE_VERTICES: &'static [GLfloat] = &[
-     -0.45, -0.45, -0.45, 0.0, 0.0,
-     -0.45,  0.45, -0.45, 0.0, 1.0,
-      0.45,  0.45, -0.45, 1.0, 1.0,
-      0.45, -0.45, -0.45, 1.0, 0.0,
-     -0.45, -0.45,  0.45, 1.0, 1.0,
-     -0.45,  0.45,  0.45, 1.0, 0.0,
-      0.45,  0.45,  0.45, 0.0, 0.0,
-      0.45, -0.45,  0.45, 0.0, 1.0,
+    -0.45, -0.45, -0.45, 0.0, 1.0,
+    -0.45,  0.45, -0.45, 0.0, 0.0,
+     0.45,  0.45, -0.45, 1.0, 0.0,
+     0.45, -0.45, -0.45, 1.0, 1.0,
+
+    -0.45, -0.45, -0.45, 1.0, 0.0,
+    -0.45,  0.45, -0.45, 0.0, 0.0,
+    -0.45,  0.45,  0.45, 0.0, 1.0,
+    -0.45, -0.45,  0.45, 1.0, 1.0,
+
+    -0.45,  0.45, -0.45, 0.0, 0.0,
+     0.45,  0.45, -0.45, 0.0, 1.0,
+     0.45,  0.45,  0.45, 1.0, 1.0,
+    -0.45,  0.45,  0.45, 1.0, 0.0,
+
+     0.45,  0.45, -0.45, 0.0, 1.0,
+     0.45, -0.45, -0.45, 1.0, 1.0,
+     0.45, -0.45,  0.45, 1.0, 0.0,
+     0.45,  0.45,  0.45, 0.0, 0.0,
+
+     0.45, -0.45, -0.45, 0.0, 0.0,
+    -0.45, -0.45, -0.45, 0.0, 1.0,
+    -0.45, -0.45,  0.45, 1.0, 1.0,
+     0.45, -0.45,  0.45, 1.0, 0.0,
+
+    -0.45, -0.45,  0.45, 0.0, 0.0,
+    -0.45,  0.45,  0.45, 0.0, 1.0,
+     0.45,  0.45,  0.45, 1.0, 1.0,
+     0.45, -0.45,  0.45, 1.0, 0.0,
+];
+
+const PYRAMID_VERTICES: &'static [GLfloat] = &[
+    -0.45,  0.0,  -0.5,  0.0, 0.5,
+     0.0,   0.45, -0.5,  0.5, 1.0,
+     0.45,  0.0,  -0.5,  1.0, 0.5,
+     0.0,  -0.45, -0.5,  0.5, 0.0,
+     0.0,   0.0,   0.45, 0.5, 0.5,
 ];
 
 const SQUARE_INDICES: &'static [GLuint] = &[
@@ -37,18 +66,33 @@ const SQUARE_INDICES: &'static [GLuint] = &[
 ];
 
 const CUBE_INDICES: &'static [GLuint] = &[
-    1, 0, 3,
-    1, 2, 3,
-    4, 0, 3,
-    4, 7, 3,
-    3, 7, 6,
-    3, 2, 6,
-    1, 2, 6,
-    1, 5, 6,
-    1, 0, 4,
-    1, 5, 4,
+    0, 1, 2,
+    0, 2, 3,
+
     4, 5, 6,
-    4, 7, 6,
+    4, 6, 7,
+
+    8, 9, 10,
+    8, 10, 11,
+
+    12, 13, 14,
+    12, 14, 15,
+
+    16, 17, 18,
+    16, 18, 19,
+
+    20, 21, 22,
+    20, 22, 23,
+];
+
+const PYRAMID_INDICES: &'static [GLuint] = &[
+    0, 1, 2,
+    0, 2, 3,
+
+    0, 1, 4,
+    1, 2, 4,
+    2, 3, 4,
+    3, 0, 4,
 ];
 
 pub struct Renderer {
@@ -69,6 +113,9 @@ pub struct Renderer {
 
     cube_v_buffer: Option<GLuint>,
     cube_i_buffer: Option<GLuint>,
+
+    pyramid_v_buffer: Option<GLuint>,
+    pyramid_i_buffer: Option<GLuint>,
 
     scene_v_shader: Option<GLuint>,
     scene_f_shader: Option<GLuint>,
@@ -103,6 +150,9 @@ impl Renderer {
 
             cube_v_buffer: None,
             cube_i_buffer: None,
+
+            pyramid_v_buffer: None,
+            pyramid_i_buffer: None,
 
             scene_v_shader: None,
             scene_f_shader: None,
@@ -149,6 +199,19 @@ impl Renderer {
                     gl::BindBuffer(gl::ARRAY_BUFFER, self.cube_v_buffer.unwrap());
                     gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.cube_i_buffer.unwrap());
                     self.used_model = Some(Geometry::Cube);
+                },
+            };
+        }
+    }
+
+    fn bind_pyramid(&mut self) {
+        unsafe {
+            match self.used_model {
+                Some(Geometry::Pyramid) => {},
+                _                    => {
+                    gl::BindBuffer(gl::ARRAY_BUFFER, self.pyramid_v_buffer.unwrap());
+                    gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.pyramid_i_buffer.unwrap());
+                    self.used_model = Some(Geometry::Pyramid);
                 },
             };
         }
@@ -243,12 +306,15 @@ impl Renderer {
 
                 let mut draw_object = |object: &ObjectRenderInfo| {
                     match object.model {
-                        Geometry::Square => {
+                        Geometry::Square  => {
                             self.bind_square();
                         },
-                        Geometry::Cube   => {
+                        Geometry::Cube    => {
                             self.bind_cube();
-                        }
+                        },
+                        Geometry::Pyramid => {
+                            self.bind_pyramid();
+                        },
                     }
 
                     if let Some(id) = active_object {
@@ -316,12 +382,15 @@ impl Renderer {
                     );
 
                     match object.model {
-                        Geometry::Square => {
+                        Geometry::Square  => {
                             gl::DrawElements(gl::TRIANGLES, SQUARE_INDICES.len() as i32, gl::UNSIGNED_INT, ptr::null());
                         },
-                        Geometry::Cube   => {
+                        Geometry::Cube    => {
                             gl::DrawElements(gl::TRIANGLES, CUBE_INDICES.len() as i32, gl::UNSIGNED_INT, ptr::null());
-                        }
+                        },
+                        Geometry::Pyramid => {
+                            gl::DrawElements(gl::TRIANGLES, PYRAMID_INDICES.len() as i32, gl::UNSIGNED_INT, ptr::null());
+                        },
                     }
                 };
 
@@ -636,16 +705,20 @@ impl Renderer {
     pub fn gen_vertex_index_buffers(&mut self) {
         self.drop_vertex_index_buffers();
 
-        let mut square_v_handle: GLuint = 0;
-        let mut square_i_handle: GLuint = 0;
-        let mut cube_v_handle: GLuint   = 0;
-        let mut cube_i_handle: GLuint   = 0;
+        let mut square_v_handle: GLuint  = 0;
+        let mut square_i_handle: GLuint  = 0;
+        let mut cube_v_handle: GLuint    = 0;
+        let mut cube_i_handle: GLuint    = 0;
+        let mut pyramid_v_handle: GLuint = 0;
+        let mut pyramid_i_handle: GLuint = 0;
 
         unsafe {
             gl::GenBuffers(1, &mut square_v_handle as *mut GLuint);
             gl::GenBuffers(1, &mut square_i_handle as *mut GLuint);
             gl::GenBuffers(1, &mut cube_v_handle as *mut GLuint);
             gl::GenBuffers(1, &mut cube_i_handle as *mut GLuint);
+            gl::GenBuffers(1, &mut pyramid_v_handle as *mut GLuint);
+            gl::GenBuffers(1, &mut pyramid_i_handle as *mut GLuint);
         }
 
         check_gl_error("generating buffers");
@@ -682,6 +755,22 @@ impl Renderer {
                 mem::transmute(&CUBE_INDICES[0]),
                 gl::STATIC_DRAW
             );
+
+            gl::BindBuffer(gl::ARRAY_BUFFER, pyramid_v_handle);
+            gl::BufferData(
+                gl::ARRAY_BUFFER,
+                (PYRAMID_VERTICES.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
+                mem::transmute(&PYRAMID_VERTICES[0]),
+                gl::STATIC_DRAW
+            );
+
+            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, pyramid_i_handle);
+            gl::BufferData(
+                gl::ELEMENT_ARRAY_BUFFER,
+                (PYRAMID_INDICES.len() * mem::size_of::<GLuint>()) as GLsizeiptr,
+                mem::transmute(&PYRAMID_INDICES[0]),
+                gl::STATIC_DRAW
+            );
         }
 
         check_gl_error("initializing buffers");
@@ -690,6 +779,8 @@ impl Renderer {
         self.square_i_buffer = Some(square_i_handle);
         self.cube_v_buffer = Some(cube_v_handle);
         self.cube_i_buffer = Some(cube_i_handle);
+        self.pyramid_v_buffer = Some(pyramid_v_handle);
+        self.pyramid_i_buffer = Some(pyramid_i_handle);
     }
 
     fn compile_shaders(&mut self) {
@@ -851,6 +942,16 @@ impl Renderer {
                 gl::DeleteBuffers(1, &mut buffer as *mut GLuint);
             }
             self.cube_i_buffer = None;
+
+            if let Some(mut buffer) = self.pyramid_v_buffer {
+                gl::DeleteBuffers(1, &mut buffer as *mut GLuint);
+            }
+            self.pyramid_v_buffer = None;
+
+            if let Some(mut buffer) = self.pyramid_i_buffer {
+                gl::DeleteBuffers(1, &mut buffer as *mut GLuint);
+            }
+            self.pyramid_i_buffer = None;
         }
 
         check_gl_error("dropping buffers");

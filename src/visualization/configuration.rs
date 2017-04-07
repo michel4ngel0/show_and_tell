@@ -32,9 +32,10 @@ impl TypeInfo {
 
     fn set_model(&mut self, model: &str) {
         match model {
-            "square" => self.model = Geometry::Square,
-            "cube"   => self.model = Geometry::Cube,
-            _       => {},
+            "square"  => self.model = Geometry::Square,
+            "cube"    => self.model = Geometry::Cube,
+            "pyramid" => self.model = Geometry::Pyramid,
+            _         => {},
         };
     }
 

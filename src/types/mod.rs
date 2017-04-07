@@ -5,6 +5,7 @@ pub mod double_channel;
 pub enum Geometry {
     Square,
     Cube,
+    Pyramid,
 }
 
 #[derive(Debug, Clone)]
