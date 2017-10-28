@@ -1,2 +1,2 @@
 # Show and tell
-Visualization tool for programming contests (soon to be) written in Rust.
+Visualization tool for programming contests written in Rust.
